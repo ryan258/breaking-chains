@@ -92,6 +92,8 @@ FORGE_MODEL_EXPERIMENT_DESIGNER=
 
 FORGE_DEFAULT_DEPTH=standard
 FORGE_DATA_DIR=./data
+FORGE_OUTPUT_DIR=./outputs
+FORGE_LOG_DIR=./logs
 FORGE_QUICK_MAX_CALLS=6
 FORGE_STANDARD_MAX_CALLS=10
 FORGE_DEEP_MAX_CALLS=24
@@ -263,7 +265,7 @@ Every A-E button must have a rendered target of at least 44 by 44 CSS pixels, an
 
 ### Canonical Markdown
 
-Each completed or paused investigation has a Markdown file under `data/investigations/<id>.md`. It includes:
+Each completed or paused investigation has a Markdown file under `outputs/investigations/<id>.md`. It includes:
 
 1. seed and selected focus;
 2. depth mode and timestamps;

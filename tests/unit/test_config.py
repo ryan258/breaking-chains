@@ -42,6 +42,8 @@ def test_loads_required_values_with_approved_defaults(
     assert settings.model_experiment_designer == "vendor/experiment-model"
     assert settings.default_depth is DepthMode.STANDARD
     assert settings.data_dir == Path("data")
+    assert settings.output_dir == Path("outputs")
+    assert settings.log_dir == Path("logs")
     assert settings.quick_max_calls == 6
     assert settings.standard_max_calls == 10
     assert settings.deep_max_calls == 24

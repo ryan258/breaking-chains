@@ -29,6 +29,8 @@ _ENVIRONMENT_NAMES = {
     "model_experiment_designer": "FORGE_MODEL_EXPERIMENT_DESIGNER",
     "default_depth": "FORGE_DEFAULT_DEPTH",
     "data_dir": "FORGE_DATA_DIR",
+    "output_dir": "FORGE_OUTPUT_DIR",
+    "log_dir": "FORGE_LOG_DIR",
     "quick_max_calls": "FORGE_QUICK_MAX_CALLS",
     "standard_max_calls": "FORGE_STANDARD_MAX_CALLS",
     "deep_max_calls": "FORGE_DEEP_MAX_CALLS",
@@ -64,6 +66,8 @@ class ForgeSettings(BaseSettings):
 
     default_depth: DepthMode = DepthMode.STANDARD
     data_dir: Path = Path("data")
+    output_dir: Path = Path("outputs")
+    log_dir: Path = Path("logs")
 
     quick_max_calls: PositiveInt = 6
     standard_max_calls: PositiveInt = 10
