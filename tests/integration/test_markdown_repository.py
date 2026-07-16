@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -25,7 +26,11 @@ from forge.domain.epistemics import (
     Provenance,
 )
 from forge.domain.investigation import DepthMode, InvestigationWorkflow, WorkflowStage
-from forge.persistence.markdown import MarkdownInvestigationRepository, RecordFormatError
+from forge.persistence.markdown import (
+    MarkdownInvestigationRepository,
+    RecordFormatError,
+    render_record,
+)
 from forge.persistence.metadata import (
     ActionProposal,
     ChallengeDisposition,
@@ -210,9 +215,12 @@ def test_untrusted_markdown_is_escaped_in_the_human_readable_section(tmp_path: P
 def test_save_rejects_an_active_incomplete_record(tmp_path: Path) -> None:
     record = investigation_record()
     active = InvestigationWorkflow.start(depth=DepthMode.STANDARD, at=STARTED)
+    invalid_copy = record.model_copy(update={"workflow": active})
 
     with pytest.raises(ValidationError, match="only paused or completed investigations"):
         InvestigationRecord.model_validate(record.model_dump() | {"workflow": active})
+    with pytest.raises(RecordFormatError, match="invalid investigation record"):
+        MarkdownInvestigationRepository(tmp_path).save(invalid_copy)
 
 
 def test_source_references_store_location_and_hash_but_no_content() -> None:
@@ -272,6 +280,45 @@ def test_load_rejects_missing_or_unknown_machine_metadata(tmp_path: Path) -> Non
 
     with pytest.raises(RecordFormatError, match="metadata block"):
         repository.load("inv_mass_question")
+
+
+def test_save_and_load_enforce_the_same_byte_limit(tmp_path: Path) -> None:
+    record = investigation_record()
+    rendered_size = len(render_record(record).encode("utf-8"))
+    exact_repository = MarkdownInvestigationRepository(
+        tmp_path / "exact", max_record_bytes=rendered_size
+    )
+
+    exact_repository.save(record)
+    assert exact_repository.load(record.id) == record
+
+    too_small_repository = MarkdownInvestigationRepository(
+        tmp_path / "small",
+        max_record_bytes=rendered_size - 1,
+    )
+    with pytest.raises(RecordFormatError, match="size limit"):
+        too_small_repository.save(record)
+    assert not (tmp_path / "small" / f"{record.id}.md").exists()
+
+
+def test_load_reads_no_more_than_limit_plus_one_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = MarkdownInvestigationRepository(tmp_path, max_record_bytes=32)
+    target = tmp_path / "inv_oversized.md"
+    target.write_bytes(b"x" * 33)
+    original_stat = Path.stat
+
+    def stale_stat(path: Path, *args: object, **kwargs: object) -> object:
+        if path == target:
+            return SimpleNamespace(st_size=32)
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stale_stat)
+
+    with pytest.raises(RecordFormatError, match="size limit"):
+        repository.load("inv_oversized")
 
 
 def test_committed_fixture_is_a_valid_human_readable_record() -> None:

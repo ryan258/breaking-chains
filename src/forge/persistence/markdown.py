@@ -25,29 +25,36 @@ class MarkdownInvestigationRepository:
     """Store complete investigations as atomic canonical Markdown files."""
 
     def __init__(self, root: Path, *, max_record_bytes: int = _MAX_RECORD_BYTES) -> None:
+        if max_record_bytes < 1:
+            raise ValueError("max_record_bytes must be positive")
         self.root = root
         self.max_record_bytes = max_record_bytes
 
     def save(self, record: InvestigationRecord) -> Path:
         """Atomically replace a record only after fully rendering it."""
 
+        try:
+            validated_record = InvestigationRecord.model_validate(record.model_dump(mode="python"))
+        except ValidationError:
+            raise RecordFormatError("invalid investigation record") from None
+        rendered_bytes = render_record(validated_record).encode("utf-8")
+        if len(rendered_bytes) > self.max_record_bytes:
+            raise RecordFormatError("investigation record exceeds the configured size limit")
+
         self.root.mkdir(parents=True, exist_ok=True)
-        target = self._target(record.id)
-        rendered = render_record(record)
+        target = self._target(validated_record.id)
         temporary_path: Path | None = None
 
         try:
             with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                newline="\n",
+                mode="wb",
                 dir=self.root,
-                prefix=f".{record.id}.",
+                prefix=f".{validated_record.id}.",
                 suffix=".tmp",
                 delete=False,
             ) as temporary:
                 temporary_path = Path(temporary.name)
-                temporary.write(rendered)
+                temporary.write(rendered_bytes)
                 temporary.flush()
                 os.fsync(temporary.fileno())
             os.replace(temporary_path, target)
@@ -63,10 +70,12 @@ class MarkdownInvestigationRepository:
         """Load and validate the complete machine-readable record boundary."""
 
         target = self._target(investigation_id)
-        if target.stat().st_size > self.max_record_bytes:
+        with target.open("rb") as record_file:
+            record_bytes = record_file.read(self.max_record_bytes + 1)
+        if len(record_bytes) > self.max_record_bytes:
             raise RecordFormatError("investigation record exceeds the configured size limit")
         try:
-            text = target.read_text(encoding="utf-8")
+            text = record_bytes.decode("utf-8")
         except UnicodeDecodeError:
             raise RecordFormatError("investigation record is not valid UTF-8") from None
         return parse_record(text)
