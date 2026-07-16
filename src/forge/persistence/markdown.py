@@ -9,7 +9,8 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from forge.domain.epistemics import DerivedClaim, EpistemicItem, Evidence, ExploratoryItem, Premise
-from forge.persistence.metadata import InvestigationId, InvestigationRecord
+from forge.domain.identifiers import InvestigationId
+from forge.persistence.metadata import InvestigationRecord
 
 _METADATA_HEADER = "<!-- forge-record:begin v1 -->\n```json\n"
 _METADATA_FOOTER = "\n```\n<!-- forge-record:end -->\n"
@@ -43,6 +44,7 @@ class MarkdownInvestigationRepository:
 
         self.root.mkdir(parents=True, exist_ok=True)
         target = self._target(validated_record.id)
+        _reject_symbolic_link(target)
         temporary_path: Path | None = None
 
         try:
@@ -70,6 +72,7 @@ class MarkdownInvestigationRepository:
         """Load and validate the complete machine-readable record boundary."""
 
         target = self._target(investigation_id)
+        _reject_symbolic_link(target)
         with target.open("rb") as record_file:
             record_bytes = record_file.read(self.max_record_bytes + 1)
         if len(record_bytes) > self.max_record_bytes:
@@ -83,12 +86,15 @@ class MarkdownInvestigationRepository:
     def exists(self, investigation_id: str) -> bool:
         """Return whether a canonical record exists for a validated identifier."""
 
-        return self._target(investigation_id).is_file()
+        target = self._target(investigation_id)
+        _reject_symbolic_link(target)
+        return target.is_file()
 
     def delete(self, investigation_id: str) -> None:
         """Remove a canonical record during coordinated rollback."""
 
         target = self._target(investigation_id)
+        _reject_symbolic_link(target)
         target.unlink(missing_ok=True)
         if self.root.exists():
             _sync_directory(self.root)
@@ -235,7 +241,12 @@ def _epistemic_lines(items: Iterable[EpistemicItem]) -> list[str]:
             if item.based_on:
                 lines.append(f"  - Based on: {', '.join(item.based_on)}")
         if item.links:
-            rendered_links = ", ".join(f"{link.kind.value} {link.target_id}" for link in item.links)
+            rendered_links = ", ".join(
+                f"{link.kind.value} "
+                f"{f'{link.target_investigation_id}/' if link.target_investigation_id else ''}"
+                f"{link.target_id}"
+                for link in item.links
+            )
             lines.append(f"  - Relationships: {_markdown_text(rendered_links)}")
     return lines or ["- None recorded."]
 
@@ -325,6 +336,11 @@ def _sync_directory(directory: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _reject_symbolic_link(path: Path) -> None:
+    if path.is_symlink():
+        raise RecordFormatError("canonical record cannot be a symbolic link")
 
 
 __all__ = [

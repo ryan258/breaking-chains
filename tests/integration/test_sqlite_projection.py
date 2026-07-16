@@ -21,10 +21,10 @@ def test_projection_preserves_resumable_state_and_relationships(tmp_path: Path) 
     assert projection.load_record(record.id) == record
     assert projection.count_investigations() == 1
     assert set(projection.relationships(record.id)) == {
-        ("epi_nonzero_mass", "depends_on", "epi_closed_system"),
-        ("epi_nonzero_mass", "depends_on", "epi_mass_reading"),
-        ("epi_nonzero_mass", "supports", "epi_mass_reading"),
-        ("epi_temperature_connection", "based_on", "epi_mass_reading"),
+        ("epi_nonzero_mass", "depends_on", record.id, "epi_closed_system"),
+        ("epi_nonzero_mass", "depends_on", record.id, "epi_mass_reading"),
+        ("epi_nonzero_mass", "supports", record.id, "epi_mass_reading"),
+        ("epi_temperature_connection", "based_on", record.id, "epi_mass_reading"),
     }
 
 

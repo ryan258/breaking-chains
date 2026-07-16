@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 
-from forge.domain.identifiers import EpistemicItemId, new_epistemic_item_id
+from forge.domain.identifiers import EpistemicItemId, InvestigationId, new_epistemic_item_id
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
@@ -53,6 +53,7 @@ class EpistemicLink(DomainModel):
 
     kind: LinkKind
     target_id: EpistemicItemId
+    target_investigation_id: InvestigationId | None = None
 
 
 class DirectObservationDetails(DomainModel):
@@ -105,8 +106,13 @@ class BaseEpistemicItem(DomainModel):
 
     @model_validator(mode="after")
     def validate_links(self) -> "BaseEpistemicItem":
-        link_keys = tuple((link.kind, link.target_id) for link in self.links)
-        if any(link.target_id == self.id for link in self.links):
+        link_keys = tuple(
+            (link.kind, link.target_investigation_id, link.target_id) for link in self.links
+        )
+        if any(
+            link.target_id == self.id and link.target_investigation_id is None
+            for link in self.links
+        ):
             raise ValueError("epistemic items cannot link to themselves")
         if len(link_keys) != len(set(link_keys)):
             raise ValueError("epistemic links must be unique")

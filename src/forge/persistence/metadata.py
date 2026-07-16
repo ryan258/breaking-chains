@@ -7,15 +7,11 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator, 
 
 from forge.application.decisions import DecisionAttempt
 from forge.domain.epistemics import EpistemicItem
-from forge.domain.identifiers import EpistemicItemId
+from forge.domain.identifiers import EpistemicItemId, InvestigationId
 from forge.domain.investigation import InvestigationWorkflow, WorkflowStage, WorkflowStatus
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalText = NonEmptyText | None
-InvestigationId = Annotated[
-    str,
-    StringConstraints(pattern=r"^inv_[a-z0-9][a-z0-9_-]{0,59}$"),
-]
 Sha256Digest = Annotated[
     str,
     StringConstraints(to_lower=True, pattern=r"^[a-f0-9]{64}$"),

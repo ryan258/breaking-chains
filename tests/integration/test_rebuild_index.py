@@ -1,8 +1,10 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
 
-from forge.persistence.markdown import MarkdownInvestigationRepository, RecordFormatError
+from forge.domain.epistemics import EpistemicLink, LinkKind
+from forge.persistence.markdown import MarkdownInvestigationRepository
 from forge.persistence.sqlite import SQLiteProjection
 
 
@@ -20,6 +22,15 @@ def test_deleted_sqlite_index_rebuilds_from_canonical_markdown(tmp_path: Path) -
             "seed": "Could temperature alter repeated readings?",
         }
     )
+    cross_link = EpistemicLink(
+        kind=LinkKind.CONNECTS,
+        target_id="epi_closed_system",
+        target_investigation_id=first.id,
+    )
+    linked_item = second.epistemic_items[-1].model_copy(update={"links": (cross_link,)})
+    second = second.model_copy(
+        update={"epistemic_items": (*second.epistemic_items[:-1], linked_item)}
+    )
     markdown.save(first)
     markdown.save(second)
     database_path = tmp_path / "forge.sqlite3"
@@ -35,10 +46,11 @@ def test_deleted_sqlite_index_rebuilds_from_canonical_markdown(tmp_path: Path) -
     assert rebuilt.load_record(second.id) == second
     assert len(rebuilt.search("temperature", category="exploratory_item")) == 2
     assert set(rebuilt.relationships(second.id)) == {
-        ("epi_nonzero_mass", "depends_on", "epi_closed_system"),
-        ("epi_nonzero_mass", "depends_on", "epi_mass_reading"),
-        ("epi_nonzero_mass", "supports", "epi_mass_reading"),
-        ("epi_temperature_connection", "based_on", "epi_mass_reading"),
+        ("epi_nonzero_mass", "depends_on", second.id, "epi_closed_system"),
+        ("epi_nonzero_mass", "depends_on", second.id, "epi_mass_reading"),
+        ("epi_nonzero_mass", "supports", second.id, "epi_mass_reading"),
+        ("epi_temperature_connection", "based_on", second.id, "epi_mass_reading"),
+        ("epi_temperature_connection", "connects", first.id, "epi_closed_system"),
     }
 
 
@@ -48,10 +60,21 @@ def test_failed_rebuild_leaves_previous_projection_intact(tmp_path: Path) -> Non
     markdown.save(record)
     projection = SQLiteProjection(tmp_path / "forge.sqlite3")
     projection.save(record)
-    invalid_copy = record.model_copy(update={"epistemic_items": (record.epistemic_items[0],) * 2})
+    replacement = record.model_copy(update={"id": "inv_replacement"})
+    with sqlite3.connect(tmp_path / "forge.sqlite3") as connection:
+        connection.execute(
+            """
+            CREATE TRIGGER fail_replacement
+            BEFORE INSERT ON investigations
+            WHEN NEW.id = 'inv_replacement'
+            BEGIN
+                SELECT RAISE(ABORT, 'simulated mid-rebuild failure');
+            END
+            """
+        )
 
-    with pytest.raises(RecordFormatError, match="invalid investigation record"):
-        projection.rebuild((invalid_copy,))
+    with pytest.raises(sqlite3.IntegrityError, match="simulated mid-rebuild failure"):
+        projection.rebuild((replacement,))
 
     assert projection.count_investigations() == 1
     assert projection.load_record(record.id) == record

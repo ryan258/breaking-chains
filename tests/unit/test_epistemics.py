@@ -215,6 +215,24 @@ def test_relationships_reject_self_links_and_duplicate_links() -> None:
             links=(self_link,),
         )
 
+
+def test_relationship_can_target_same_item_id_in_another_investigation() -> None:
+    cross_investigation_link = EpistemicLink(
+        kind=LinkKind.CONNECTS,
+        target_id="epi_source_item",
+        target_investigation_id="inv_prior_work",
+    )
+
+    premise = Premise(
+        id="epi_source_item",
+        statement="The system is closed.",
+        uncertainty=medium_confidence(),
+        origin="Experiment setup",
+        links=(cross_investigation_link,),
+    )
+
+    assert premise.links[0].target_investigation_id == "inv_prior_work"
+
     duplicate_link = EpistemicLink(kind=LinkKind.CONTRADICTS, target_id="epi_other_item")
     with pytest.raises(ValidationError):
         Premise(

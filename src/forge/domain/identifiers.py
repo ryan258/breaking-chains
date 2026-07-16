@@ -9,6 +9,10 @@ EpistemicItemId = Annotated[
     str,
     StringConstraints(pattern=r"^epi_[a-z0-9][a-z0-9_-]{2,63}$"),
 ]
+InvestigationId = Annotated[
+    str,
+    StringConstraints(pattern=r"^inv_[a-z0-9][a-z0-9_-]{0,59}$"),
+]
 
 
 def new_epistemic_item_id() -> str:

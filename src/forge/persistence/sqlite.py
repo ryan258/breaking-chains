@@ -45,8 +45,11 @@ CREATE TABLE IF NOT EXISTS relationships (
     investigation_id TEXT NOT NULL,
     source_id TEXT NOT NULL,
     relation_kind TEXT NOT NULL,
+    target_investigation_id TEXT NOT NULL,
     target_id TEXT NOT NULL,
-    PRIMARY KEY (investigation_id, source_id, relation_kind, target_id),
+    PRIMARY KEY (
+        investigation_id, source_id, relation_kind, target_investigation_id, target_id
+    ),
     FOREIGN KEY (investigation_id, source_id)
         REFERENCES epistemic_items(investigation_id, item_id) ON DELETE CASCADE
 );
@@ -131,20 +134,20 @@ class SQLiteProjection:
             row = connection.execute("SELECT COUNT(*) FROM investigations").fetchone()
         return int(row[0])
 
-    def relationships(self, investigation_id: str) -> tuple[tuple[str, str, str], ...]:
+    def relationships(self, investigation_id: str) -> tuple[tuple[str, str, str, str], ...]:
         """Return every explicit, dependency, and basis relationship."""
 
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT source_id, relation_kind, target_id
+                SELECT source_id, relation_kind, target_investigation_id, target_id
                 FROM relationships
                 WHERE investigation_id = ?
-                ORDER BY source_id, relation_kind, target_id
+                ORDER BY source_id, relation_kind, target_investigation_id, target_id
                 """,
                 (investigation_id,),
             ).fetchall()
-        return tuple((row[0], row[1], row[2]) for row in rows)
+        return tuple((row[0], row[1], row[2], row[3]) for row in rows)
 
     def search(
         self,
@@ -248,19 +251,24 @@ def _replace_record(connection: sqlite3.Connection, record: InvestigationRecord)
                 provenance,
             ),
         )
-        relationships = [(link.kind.value, link.target_id) for link in item.links]
+        relationships = [
+            (link.kind.value, link.target_investigation_id or record.id, link.target_id)
+            for link in item.links
+        ]
         if isinstance(item, DerivedClaim):
-            relationships.extend(("depends_on", dependency) for dependency in item.dependencies)
+            relationships.extend(
+                ("depends_on", record.id, dependency) for dependency in item.dependencies
+            )
         elif isinstance(item, ExploratoryItem):
-            relationships.extend(("based_on", basis) for basis in item.based_on)
-        for relation_kind, target_id in relationships:
+            relationships.extend(("based_on", record.id, basis) for basis in item.based_on)
+        for relation_kind, target_investigation_id, target_id in relationships:
             connection.execute(
                 """
                 INSERT INTO relationships (
-                    investigation_id, source_id, relation_kind, target_id
-                ) VALUES (?, ?, ?, ?)
+                    investigation_id, source_id, relation_kind, target_investigation_id, target_id
+                ) VALUES (?, ?, ?, ?, ?)
                 """,
-                (record.id, item.id, relation_kind, target_id),
+                (record.id, item.id, relation_kind, target_investigation_id, target_id),
             )
 
 

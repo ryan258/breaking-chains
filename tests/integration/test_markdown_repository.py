@@ -249,6 +249,25 @@ def test_investigation_id_cannot_escape_repository_root(tmp_path: Path) -> None:
         InvestigationRecord.model_validate(payload)
 
 
+def test_all_repository_operations_reject_symbolic_link_records(tmp_path: Path) -> None:
+    fixture = Path(__file__).parents[1] / "fixtures" / "inv_mass_question.md"
+    linked_record = tmp_path / "inv_linked_record.md"
+    linked_record.symlink_to(fixture)
+    repository = MarkdownInvestigationRepository(tmp_path)
+
+    with pytest.raises(RecordFormatError, match="symbolic link"):
+        repository.load("inv_linked_record")
+    with pytest.raises(RecordFormatError, match="symbolic link"):
+        repository.exists("inv_linked_record")
+    with pytest.raises(RecordFormatError, match="symbolic link"):
+        repository.list_records()
+    with pytest.raises(RecordFormatError, match="symbolic link"):
+        repository.delete("inv_linked_record")
+
+    assert linked_record.is_symlink()
+    assert fixture.exists()
+
+
 def test_failed_atomic_replace_preserves_previous_valid_record(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -312,7 +331,8 @@ def test_load_reads_no_more_than_limit_plus_one_bytes(
 
     def stale_stat(path: Path, *args: object, **kwargs: object) -> object:
         if path == target:
-            return SimpleNamespace(st_size=32)
+            actual = original_stat(path, *args, **kwargs)
+            return SimpleNamespace(st_size=32, st_mode=actual.st_mode)
         return original_stat(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "stat", stale_stat)
