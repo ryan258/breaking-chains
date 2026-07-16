@@ -73,14 +73,14 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Acceptance criteria:**
 
-- [ ] Settings validate every required role model, data path, and OpenRouter credential while redacting secrets.
-- [ ] Depth defaults are exactly 6/10/24 calls and 1200/2400/4800 maximum output tokens per call for Quick/Standard/Deep.
-- [ ] Missing or invalid settings are reported together, and `.env.example` contains placeholders but no credential.
+- [x] Settings validate every required role model, data path, and OpenRouter credential while redacting secrets.
+- [x] Depth defaults are exactly 6/10/24 calls and 1200/2400/4800 maximum output tokens per call for Quick/Standard/Deep.
+- [x] Missing or invalid settings are reported together, and `.env.example` contains placeholders but no credential.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/unit/test_config.py`
-- [ ] Manual check: omit several keys and confirm one sanitized error lists all configuration problems.
+- [x] `uv run pytest tests/unit/test_config.py`
+- [x] Manual check: omit several keys and confirm one sanitized error lists all configuration problems.
 
 **Dependencies:** Task 1A.
 
@@ -94,10 +94,10 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 ## Checkpoint 0: Reproducible and secret-safe setup
 
-- [ ] `uv sync`
-- [ ] `uv run pytest tests/unit/test_config.py`
-- [ ] `uv run ruff check .`
-- [ ] Confirm `.env` and runtime data paths are ignored before adding any local credential.
+- [x] `uv sync`
+- [x] `uv run pytest tests/unit/test_config.py`
+- [x] `uv run ruff check .`
+- [x] Confirm `.env` and runtime data paths are ignored before adding any local credential.
 
 ### Task 2: Implement epistemic items and traceability invariants
 
