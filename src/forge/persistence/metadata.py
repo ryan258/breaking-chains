@@ -92,6 +92,12 @@ class InvestigationRecord(MetadataModel):
         item_ids = tuple(item.id for item in self.epistemic_items)
         if len(item_ids) != len(set(item_ids)):
             raise ValueError("epistemic item identifiers must be unique within a record")
+        for item in self.epistemic_items:
+            if any(
+                (link.target_investigation_id or self.id) == self.id and link.target_id == item.id
+                for link in item.links
+            ):
+                raise ValueError("an epistemic item cannot link to itself")
         challenge_targets = {challenge.target_id for challenge in self.skeptical_challenges}
         if not challenge_targets.issubset(item_ids):
             raise ValueError("skeptical challenges must target an item in the record")

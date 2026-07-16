@@ -10,6 +10,7 @@ from forge.domain.epistemics import DerivedClaim, Evidence, ExploratoryItem, Pre
 from forge.persistence.markdown import RecordFormatError
 from forge.persistence.metadata import InvestigationRecord
 
+_SCHEMA_VERSION = 2
 _SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -64,6 +65,34 @@ CREATE INDEX IF NOT EXISTS idx_relationship_target
 
 _CATEGORIES = frozenset({"premise", "evidence", "derived_claim", "exploratory_item"})
 
+_MIGRATE_V1_TO_V2 = """
+DROP INDEX IF EXISTS idx_relationship_target;
+ALTER TABLE relationships RENAME TO relationships_v1;
+
+CREATE TABLE relationships (
+    investigation_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    relation_kind TEXT NOT NULL,
+    target_investigation_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    PRIMARY KEY (
+        investigation_id, source_id, relation_kind, target_investigation_id, target_id
+    ),
+    FOREIGN KEY (investigation_id, source_id)
+        REFERENCES epistemic_items(investigation_id, item_id) ON DELETE CASCADE
+);
+
+INSERT INTO relationships (
+    investigation_id, source_id, relation_kind, target_investigation_id, target_id
+)
+SELECT investigation_id, source_id, relation_kind, investigation_id, target_id
+FROM relationships_v1;
+
+DROP TABLE relationships_v1;
+CREATE INDEX idx_relationship_target ON relationships(target_id);
+UPDATE schema_info SET version = 2;
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class SearchHit:
@@ -90,8 +119,13 @@ class SQLiteProjection:
             connection.executescript(_SCHEMA)
             row = connection.execute("SELECT version FROM schema_info LIMIT 1").fetchone()
             if row is None:
-                connection.execute("INSERT INTO schema_info (version) VALUES (?)", (1,))
-            elif row[0] != 1:
+                connection.execute(
+                    "INSERT INTO schema_info (version) VALUES (?)",
+                    (_SCHEMA_VERSION,),
+                )
+            elif row[0] == 1:
+                connection.executescript(_MIGRATE_V1_TO_V2)
+            elif row[0] != _SCHEMA_VERSION:
                 raise RuntimeError("unsupported SQLite projection schema")
 
     def save(self, record: InvestigationRecord) -> None:

@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -109,3 +110,60 @@ def test_unit_of_work_removes_new_markdown_when_initial_projection_fails(
         unit_of_work.save(record)
 
     assert not (tmp_path / "investigations" / f"{record.id}.md").exists()
+
+
+def test_version_one_projection_migrates_relationship_targets(tmp_path: Path) -> None:
+    database_path = tmp_path / "forge.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE schema_info (version INTEGER NOT NULL);
+            INSERT INTO schema_info (version) VALUES (1);
+            CREATE TABLE investigations (
+                id TEXT PRIMARY KEY,
+                seed TEXT NOT NULL,
+                selected_focus TEXT,
+                depth TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                record_json TEXT NOT NULL
+            );
+            CREATE TABLE epistemic_items (
+                investigation_id TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                category TEXT NOT NULL,
+                subtype TEXT,
+                statement TEXT NOT NULL,
+                confidence_level TEXT NOT NULL,
+                provenance_origin TEXT NOT NULL,
+                PRIMARY KEY (investigation_id, item_id)
+            );
+            CREATE TABLE relationships (
+                investigation_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                relation_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                PRIMARY KEY (investigation_id, source_id, relation_kind, target_id)
+            );
+            """
+        )
+
+    projection = SQLiteProjection(database_path)
+    record = fixture_record()
+    projection.save(record)
+
+    with sqlite3.connect(database_path) as connection:
+        version = connection.execute("SELECT version FROM schema_info").fetchone()[0]
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(relationships)").fetchall()
+        }
+    assert version == 2
+    assert "target_investigation_id" in columns
+    assert set(projection.relationships(record.id)) == {
+        ("epi_nonzero_mass", "depends_on", record.id, "epi_closed_system"),
+        ("epi_nonzero_mass", "depends_on", record.id, "epi_mass_reading"),
+        ("epi_nonzero_mass", "supports", record.id, "epi_mass_reading"),
+        ("epi_temperature_connection", "based_on", record.id, "epi_mass_reading"),
+    }

@@ -249,6 +249,23 @@ def test_investigation_id_cannot_escape_repository_root(tmp_path: Path) -> None:
         InvestigationRecord.model_validate(payload)
 
 
+def test_record_rejects_explicitly_qualified_self_link() -> None:
+    record = investigation_record()
+    first_item = record.epistemic_items[0]
+    self_link = EpistemicLink(
+        kind=LinkKind.CONNECTS,
+        target_id=first_item.id,
+        target_investigation_id=record.id,
+    )
+    linked_item = first_item.model_copy(update={"links": (self_link,)})
+    invalid_record = record.model_copy(
+        update={"epistemic_items": (linked_item, *record.epistemic_items[1:])}
+    )
+
+    with pytest.raises(ValidationError, match="cannot link to itself"):
+        InvestigationRecord.model_validate(invalid_record.model_dump(mode="python"))
+
+
 def test_all_repository_operations_reject_symbolic_link_records(tmp_path: Path) -> None:
     fixture = Path(__file__).parents[1] / "fixtures" / "inv_mass_question.md"
     linked_record = tmp_path / "inv_linked_record.md"
