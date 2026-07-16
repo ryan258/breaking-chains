@@ -48,13 +48,13 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Acceptance criteria:**
 
-- [ ] `uv sync` creates a working environment from committed metadata and lockfile.
-- [ ] `.gitignore` excludes `.env`, runtime investigations, SQLite files, caches, and private source material.
+- [x] `uv sync` creates a working environment from committed metadata and lockfile.
+- [x] `.gitignore` excludes `.env`, runtime investigations, SQLite files, caches, and private source material.
 
 **Verification:**
 
-- [ ] `uv sync`
-- [ ] `uv run ruff check .`
+- [x] `uv sync`
+- [x] `uv run ruff check .`
 
 **Dependencies:** None.
 
