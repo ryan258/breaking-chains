@@ -192,14 +192,14 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Acceptance criteria:**
 
-- [ ] Saving an investigation updates Markdown and SQLite consistently or leaves the previous valid state intact.
-- [ ] Deleting SQLite and rebuilding from Markdown preserves completed intellectual content and relationships.
-- [ ] Search locates prior premises, evidence, connections, and hypotheses by text and category.
+- [x] Saving an investigation updates Markdown and SQLite consistently or leaves the previous valid state intact.
+- [x] Deleting SQLite and rebuilding from Markdown preserves completed intellectual content and relationships.
+- [x] Search locates prior premises, evidence, connections, and hypotheses by text and category.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/integration/test_sqlite_projection.py`
-- [ ] `uv run pytest tests/integration/test_rebuild_index.py`
+- [x] `uv run pytest tests/integration/test_sqlite_projection.py`
+- [x] `uv run pytest tests/integration/test_rebuild_index.py`
 
 **Dependencies:** Task 4.
 
