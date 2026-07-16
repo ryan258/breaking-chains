@@ -105,14 +105,14 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Acceptance criteria:**
 
-- [ ] Premises cannot be stored as evidence, and derived claims must name their complete dependency set.
-- [ ] Evidence subtypes enforce their required provenance fields, including method/unit/conditions for measurements.
-- [ ] High confidence cannot change an item's epistemic category.
+- [x] Premises cannot be stored as evidence, and derived claims must name their complete dependency set.
+- [x] Evidence subtypes enforce their required provenance fields, including method/unit/conditions for measurements.
+- [x] High confidence cannot change an item's epistemic category.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/unit/test_epistemics.py`
-- [ ] `uv run ruff check src/forge/domain tests/unit/test_epistemics.py`
+- [x] `uv run pytest tests/unit/test_epistemics.py`
+- [x] `uv run ruff check src/forge/domain tests/unit/test_epistemics.py`
 
 **Dependencies:** Task 1B.
 
