@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import fcntl
+import os
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
+
+from pydantic import TypeAdapter, ValidationError
 
 from forge.application.decisions import (
     ChoiceLetter,
@@ -15,6 +22,7 @@ from forge.application.decisions import (
     submit_decision,
 )
 from forge.domain.epistemics import EpistemicItem
+from forge.domain.identifiers import InvestigationId
 from forge.domain.investigation import (
     DepthMode,
     InvestigationWorkflow,
@@ -23,6 +31,8 @@ from forge.domain.investigation import (
 )
 from forge.gateways.model import ModelRole
 from forge.persistence.metadata import ActionProposal, InvestigationRecord, SkepticalChallenge
+
+_INVESTIGATION_ID_ADAPTER = TypeAdapter(InvestigationId)
 
 
 @dataclass(frozen=True)
@@ -34,7 +44,11 @@ class SpecialistContribution:
 
 
 class SpecialistRunner(Protocol):
-    def run(self, role: ModelRole, record: InvestigationRecord) -> SpecialistContribution: ...
+    async def run(
+        self,
+        role: ModelRole,
+        record: InvestigationRecord,
+    ) -> SpecialistContribution: ...
 
 
 class InvestigationStore(Protocol):
@@ -77,12 +91,14 @@ class InvestigationOrchestrator:
         store: InvestigationStore,
         specialists: SpecialistRunner,
         clock: Callable[[], datetime],
+        lock_root: Path,
     ) -> None:
         self._store = store
         self._specialists = specialists
         self._clock = clock
+        self._lock_root = lock_root
 
-    def start(
+    async def start(
         self,
         *,
         investigation_id: str,
@@ -90,33 +106,53 @@ class InvestigationOrchestrator:
         depth: DepthMode,
         at: datetime,
     ) -> OrchestrationView:
-        if self._store.exists(investigation_id):
-            return self.run_until_checkpoint(investigation_id)
-        record = InvestigationRecord(
-            id=investigation_id,
-            seed=seed,
-            workflow=InvestigationWorkflow.start(depth=depth, at=at),
-        )
-        self._store.save(record)
-        return self.run_until_checkpoint(investigation_id)
+        async with self._investigation_lock(investigation_id):
+            if not self._store.exists(investigation_id):
+                record = InvestigationRecord(
+                    id=investigation_id,
+                    seed=seed,
+                    workflow=InvestigationWorkflow.start(depth=depth, at=at),
+                )
+                self._store.save(record)
+            return await self._run_until_checkpoint_locked(investigation_id)
 
-    def run_until_checkpoint(self, investigation_id: str) -> OrchestrationView:
+    async def run_until_checkpoint(self, investigation_id: str) -> OrchestrationView:
+        async with self._investigation_lock(investigation_id):
+            return await self._run_until_checkpoint_locked(investigation_id)
+
+    async def _run_until_checkpoint_locked(self, investigation_id: str) -> OrchestrationView:
         record = self._store.load(investigation_id)
         while record.workflow.status is WorkflowStatus.ACTIVE:
             if record.workflow.stage is WorkflowStage.COMPLETED:
                 return OrchestrationView(record=record, prompt=None)
             if record.pending_decision is not None:
                 return OrchestrationView(record=record, prompt=record.pending_decision)
-            record = self._advance_one_stage(record)
+            record = await self._advance_one_stage(record)
         return OrchestrationView(record=record, prompt=record.pending_decision)
 
-    def submit_decision(
+    async def submit_decision(
         self,
         investigation_id: str,
         *,
         prompt_id: str,
         raw_choice: str,
         custom_answer: str | None = None,
+    ) -> OrchestrationView:
+        async with self._investigation_lock(investigation_id):
+            return await self._submit_decision_locked(
+                investigation_id,
+                prompt_id=prompt_id,
+                raw_choice=raw_choice,
+                custom_answer=custom_answer,
+            )
+
+    async def _submit_decision_locked(
+        self,
+        investigation_id: str,
+        *,
+        prompt_id: str,
+        raw_choice: str,
+        custom_answer: str | None,
     ) -> OrchestrationView:
         record = self._store.load(investigation_id)
         prompt = record.pending_decision
@@ -170,27 +206,29 @@ class InvestigationOrchestrator:
         self._store.save(record)
         if should_pause:
             return OrchestrationView(record=record, prompt=None)
-        return self.run_until_checkpoint(investigation_id)
+        return await self._run_until_checkpoint_locked(investigation_id)
 
-    def pause(self, investigation_id: str) -> OrchestrationView:
-        record = self._store.load(investigation_id)
-        if record.workflow.status is WorkflowStatus.ACTIVE:
-            record = record.model_copy(
-                update={"workflow": record.workflow.pause(at=self._at(record))}
-            )
-            self._store.save(record)
-        return OrchestrationView(record=record, prompt=record.pending_decision)
+    async def pause(self, investigation_id: str) -> OrchestrationView:
+        async with self._investigation_lock(investigation_id):
+            record = self._store.load(investigation_id)
+            if record.workflow.status is WorkflowStatus.ACTIVE:
+                record = record.model_copy(
+                    update={"workflow": record.workflow.pause(at=self._at(record))}
+                )
+                self._store.save(record)
+            return OrchestrationView(record=record, prompt=record.pending_decision)
 
-    def resume(self, investigation_id: str) -> OrchestrationView:
-        record = self._store.load(investigation_id)
-        if record.workflow.status is WorkflowStatus.PAUSED:
-            record = record.model_copy(
-                update={"workflow": record.workflow.resume(at=self._at(record))}
-            )
-            self._store.save(record)
-        return self.run_until_checkpoint(investigation_id)
+    async def resume(self, investigation_id: str) -> OrchestrationView:
+        async with self._investigation_lock(investigation_id):
+            record = self._store.load(investigation_id)
+            if record.workflow.status is WorkflowStatus.PAUSED:
+                record = record.model_copy(
+                    update={"workflow": record.workflow.resume(at=self._at(record))}
+                )
+                self._store.save(record)
+            return await self._run_until_checkpoint_locked(investigation_id)
 
-    def _advance_one_stage(self, record: InvestigationRecord) -> InvestigationRecord:
+    async def _advance_one_stage(self, record: InvestigationRecord) -> InvestigationRecord:
         stage = record.workflow.stage
         if stage is WorkflowStage.SEEDED:
             return self._persist_checkpoint(record, WorkflowStage.FOCUS_CHECKPOINT)
@@ -205,7 +243,7 @@ class InvestigationOrchestrator:
         if role_stage is None:
             raise RuntimeError(f"orchestrator cannot advance stage {stage}")
         role, next_stage = role_stage
-        contribution = self._specialists.run(role, record)
+        contribution = await self._specialists.run(role, record)
         record = self._apply_contribution(record, role, contribution)
         return self._persist_transition(record, next_stage)
 
@@ -266,6 +304,38 @@ class InvestigationOrchestrator:
         """Keep persisted workflow time monotonic across restarts and clock skew."""
 
         return max(self._clock(), record.workflow.updated_at)
+
+    @asynccontextmanager
+    async def _investigation_lock(self, investigation_id: str):
+        try:
+            safe_id = _INVESTIGATION_ID_ADAPTER.validate_python(investigation_id)
+        except ValidationError:
+            raise ValueError("invalid investigation identifier") from None
+        lock_root_existed = self._lock_root.exists()
+        self._lock_root.mkdir(parents=True, exist_ok=True)
+        if not lock_root_existed:
+            os.chmod(self._lock_root, 0o700)
+        lock_path = self._lock_root / f"{safe_id}.lock"
+        flags = os.O_RDWR | os.O_CREAT
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(lock_path, flags, 0o600)
+        except OSError as error:
+            raise ValueError("unable to open investigation lock safely") from error
+        acquired = False
+        try:
+            os.fchmod(descriptor, 0o600)
+            while not acquired:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                except BlockingIOError:
+                    await asyncio.sleep(0.01)
+            yield
+        finally:
+            if acquired:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
 
 def _decision_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPrompt:

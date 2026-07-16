@@ -51,37 +51,44 @@ def unit_of_work(tmp_path: Path) -> InvestigationUnitOfWork:
     )
 
 
-def choose_a(orchestrator: InvestigationOrchestrator, view):
-    return orchestrator.submit_decision(
+async def choose_a(orchestrator: InvestigationOrchestrator, view):
+    return await orchestrator.submit_decision(
         view.record.id,
         prompt_id=view.prompt.id,
         raw_choice="A",
     )
 
 
-def test_pause_restart_and_resume_preserve_prompt_without_repeating_research(
+@pytest.mark.asyncio
+async def test_pause_restart_and_resume_preserve_prompt_without_repeating_research(
     tmp_path: Path,
 ) -> None:
     uow = unit_of_work(tmp_path)
     initial_runner = DeterministicSpecialistRunner()
     initial = InvestigationOrchestrator(
-        store=CrashAfterStageStore(uow), specialists=initial_runner, clock=TickingClock()
+        store=CrashAfterStageStore(uow),
+        specialists=initial_runner,
+        clock=TickingClock(),
+        lock_root=tmp_path / "locks",
     )
-    focus = initial.start(
+    focus = await initial.start(
         investigation_id="inv_pause_resume",
         seed="What survives interruption?",
         depth=DepthMode.QUICK,
         at=datetime(2026, 7, 16, 22, 0, tzinfo=UTC),
     )
-    evidence = choose_a(initial, focus)
-    paused = initial.pause(evidence.record.id)
+    evidence = await choose_a(initial, focus)
+    paused = await initial.pause(evidence.record.id)
 
     restarted_runner = DeterministicSpecialistRunner()
     restarted = InvestigationOrchestrator(
-        store=CrashAfterStageStore(uow), specialists=restarted_runner, clock=TickingClock()
+        store=CrashAfterStageStore(uow),
+        specialists=restarted_runner,
+        clock=TickingClock(),
+        lock_root=tmp_path / "locks",
     )
-    resumed = restarted.resume(paused.record.id)
-    resumed_again = restarted.resume(paused.record.id)
+    resumed = await restarted.resume(paused.record.id)
+    resumed_again = await restarted.resume(paused.record.id)
 
     assert paused.record.workflow.status is WorkflowStatus.PAUSED
     assert resumed.record.workflow.status is WorkflowStatus.ACTIVE
@@ -101,7 +108,8 @@ def test_pause_restart_and_resume_preserve_prompt_without_repeating_research(
         (WorkflowStage.ACTIONS_DESIGNED, ModelRole.EXPERIMENT_DESIGNER),
     ],
 )
-def test_restart_never_repeats_a_specialist_for_a_persisted_stage(
+@pytest.mark.asyncio
+async def test_restart_never_repeats_a_specialist_for_a_persisted_stage(
     tmp_path: Path,
     crash_stage: WorkflowStage,
     completed_role: ModelRole,
@@ -113,8 +121,9 @@ def test_restart_never_repeats_a_specialist_for_a_persisted_stage(
         store=crashing_store,
         specialists=initial_runner,
         clock=TickingClock(),
+        lock_root=tmp_path / "locks",
     )
-    focus = initial.start(
+    focus = await initial.start(
         investigation_id=f"inv_restart_{crash_stage.value}",
         seed="Which completed work should survive?",
         depth=DepthMode.QUICK,
@@ -123,10 +132,10 @@ def test_restart_never_repeats_a_specialist_for_a_persisted_stage(
 
     with pytest.raises(RuntimeError, match="simulated process stop"):
         if crash_stage is WorkflowStage.PREMISES_EXTRACTED:
-            choose_a(initial, focus)
+            await choose_a(initial, focus)
         else:
-            evidence = choose_a(initial, focus)
-            choose_a(initial, evidence)
+            evidence = await choose_a(initial, focus)
+            await choose_a(initial, evidence)
 
     persisted = uow.load(focus.record.id)
     assert persisted.workflow.stage is crash_stage
@@ -136,8 +145,9 @@ def test_restart_never_repeats_a_specialist_for_a_persisted_stage(
         store=CrashAfterStageStore(uow),
         specialists=restarted_runner,
         clock=TickingClock(),
+        lock_root=tmp_path / "locks",
     )
-    restarted.run_until_checkpoint(focus.record.id)
+    await restarted.run_until_checkpoint(focus.record.id)
 
     assert initial_runner.calls.count(completed_role) == 1
     assert completed_role not in restarted_runner.calls

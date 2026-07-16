@@ -33,6 +33,23 @@ def test_projection_preserves_resumable_state_and_relationships(tmp_path: Path) 
     assert os.stat(database_path).st_mode & 0o777 == 0o600
 
 
+def test_projection_rejects_symlink_without_changing_existing_parent_mode(
+    tmp_path: Path,
+) -> None:
+    shared_parent = tmp_path / "shared"
+    shared_parent.mkdir(mode=0o755)
+    os.chmod(shared_parent, 0o755)
+    target = tmp_path / "elsewhere.sqlite3"
+    target.touch()
+    linked_path = shared_parent / "forge.sqlite3"
+    linked_path.symlink_to(target)
+
+    with pytest.raises(ValueError, match="open SQLite projection safely"):
+        SQLiteProjection(linked_path)
+
+    assert os.stat(shared_parent).st_mode & 0o777 == 0o755
+
+
 def test_search_finds_items_by_text_and_category(tmp_path: Path) -> None:
     record = fixture_record()
     projection = SQLiteProjection(tmp_path / "forge.sqlite3")

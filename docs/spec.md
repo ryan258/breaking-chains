@@ -195,6 +195,8 @@ An investigation is a persisted state machine:
 
 The user can pause at any state. Resume must continue from the last completed state without repeating paid model work unless explicitly requested.
 
+The orchestrator and specialist boundary are asynchronous so provider calls do not block the application. Each public state-changing operation holds a per-investigation cross-process lock across load, validation, specialist work, and persistence. A concurrent replay therefore reloads after the first operation commits and is rejected as stale instead of repeating a paid model call. Lock files live under the configured private local data directory.
+
 ### Depth modes
 
 | Mode | Intended use | Behavior |

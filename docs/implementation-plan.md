@@ -260,14 +260,14 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] A fake-gateway Quick investigation reaches completion through focus, evidence, and action checkpoints.
-- [ ] Every completed stage is persisted before the next stage begins.
-- [ ] Pause, restart, and resume do not repeat completed fake role runs.
+- [x] A fake-gateway Quick investigation reaches completion through focus, evidence, and action checkpoints.
+- [x] Every completed stage is persisted before the next stage begins.
+- [x] Pause, restart, and resume do not repeat completed fake role runs.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/integration/test_orchestration_walking_skeleton.py`
-- [ ] `uv run pytest tests/integration/test_resume.py`
+- [x] `uv run pytest tests/integration/test_orchestration_walking_skeleton.py`
+- [x] `uv run pytest tests/integration/test_resume.py`
 
 **Dependencies:** Tasks 3, 5, and 6.
 

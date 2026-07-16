@@ -119,13 +119,20 @@ class SQLiteProjection:
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        parent_existed = self.path.parent.exists()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.path.parent, 0o700)
-        if self.path.is_symlink():
-            raise ValueError("SQLite projection cannot be a symbolic link")
-        descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
-        os.close(descriptor)
-        os.chmod(self.path, 0o600)
+        if not parent_existed:
+            os.chmod(self.path.parent, 0o700)
+        flags = os.O_RDWR | os.O_CREAT
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(self.path, flags, 0o600)
+        except OSError as error:
+            raise ValueError("unable to open SQLite projection safely") from error
+        try:
+            os.fchmod(descriptor, 0o600)
+        finally:
+            os.close(descriptor)
         with self._connect() as connection:
             connection.executescript(_SCHEMA)
             row = connection.execute("SELECT version FROM schema_info LIMIT 1").fetchone()

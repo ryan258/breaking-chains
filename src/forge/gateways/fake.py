@@ -24,7 +24,11 @@ class DeterministicSpecialistRunner:
     def __init__(self) -> None:
         self.calls: list[ModelRole] = []
 
-    def run(self, role: ModelRole, record: InvestigationRecord) -> SpecialistContribution:
+    async def run(
+        self,
+        role: ModelRole,
+        record: InvestigationRecord,
+    ) -> SpecialistContribution:
         self.calls.append(role)
         confidence = Confidence(
             level=ConfidenceLevel.MEDIUM,
