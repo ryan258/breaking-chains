@@ -80,6 +80,31 @@ class MarkdownInvestigationRepository:
             raise RecordFormatError("investigation record is not valid UTF-8") from None
         return parse_record(text)
 
+    def exists(self, investigation_id: str) -> bool:
+        """Return whether a canonical record exists for a validated identifier."""
+
+        return self._target(investigation_id).is_file()
+
+    def delete(self, investigation_id: str) -> None:
+        """Remove a canonical record during coordinated rollback."""
+
+        target = self._target(investigation_id)
+        target.unlink(missing_ok=True)
+        if self.root.exists():
+            _sync_directory(self.root)
+
+    def list_records(self) -> tuple[InvestigationRecord, ...]:
+        """Load every canonical record in deterministic identifier order."""
+
+        if not self.root.exists():
+            return ()
+        records = []
+        for path in sorted(self.root.glob("inv_*.md")):
+            if path.is_symlink():
+                raise RecordFormatError("canonical record cannot be a symbolic link")
+            records.append(self.load(path.stem))
+        return tuple(records)
+
     def _target(self, investigation_id: str) -> Path:
         try:
             safe_id = _INVESTIGATION_ID_ADAPTER.validate_python(investigation_id)
