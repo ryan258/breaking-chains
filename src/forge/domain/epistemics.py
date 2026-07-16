@@ -132,6 +132,7 @@ class DerivedClaim(BaseEpistemicItem):
     """A conclusion with an explicit derivation and dependency set."""
 
     category: Literal["derived_claim"] = "derived_claim"
+    provenance: Provenance
     dependencies: tuple[EpistemicItemId, ...] = Field(min_length=1)
     derivation: NonEmptyText
 
@@ -158,6 +159,7 @@ class ExploratoryItem(BaseEpistemicItem):
     """An interpretation or possibility that has not become evidence."""
 
     category: Literal["exploratory_item"] = "exploratory_item"
+    provenance: Provenance
     exploratory_type: ExploratoryType
     based_on: tuple[EpistemicItemId, ...] = ()
 

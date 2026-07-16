@@ -9,6 +9,7 @@ from forge.domain.epistemics import (
     EpistemicLink,
     Evidence,
     ExperimentResultDetails,
+    ExploratoryItem,
     LinkKind,
     MeasurementDetails,
     Premise,
@@ -172,6 +173,7 @@ def test_derived_claim_names_unique_nonself_dependencies() -> None:
         id="epi_claim_mass",
         statement="The sample has nonzero mass.",
         uncertainty=medium_confidence(),
+        provenance=Provenance(origin="Synthesizer role run", locator="run-1"),
         dependencies=("epi_mass_measurement", "epi_scale_premise"),
         derivation="The calibrated reading is positive under the adopted scale premise.",
     )
@@ -195,6 +197,7 @@ def test_derived_claim_rejects_empty_self_or_duplicate_dependencies(
             id="epi_claim_mass",
             statement="The sample has nonzero mass.",
             uncertainty=medium_confidence(),
+            provenance=Provenance(origin="Synthesizer role run", locator="run-1"),
             dependencies=dependencies,
             derivation="The calibrated reading is positive.",
         )
@@ -236,3 +239,51 @@ def test_epistemic_items_are_immutable_and_reject_unknown_fields() -> None:
 
     with pytest.raises(ValidationError):
         Premise.model_validate(premise.model_dump() | {"promoted_to_evidence": True})
+
+
+def test_boundary_parser_rejects_exploratory_item_without_provenance() -> None:
+    with pytest.raises(ValidationError):
+        parse_epistemic_item(
+            {
+                "id": "epi_unattributed_hypothesis",
+                "category": "exploratory_item",
+                "exploratory_type": "hypothesis",
+                "statement": "The observed effect may depend on temperature.",
+                "uncertainty": medium_confidence().model_dump(mode="json"),
+                "based_on": ["epi_temperature_observation"],
+            }
+        )
+
+
+def test_boundary_parser_rejects_derived_claim_without_provenance() -> None:
+    with pytest.raises(ValidationError):
+        parse_epistemic_item(
+            {
+                "id": "epi_unattributed_claim",
+                "category": "derived_claim",
+                "statement": "The sample has nonzero mass.",
+                "uncertainty": medium_confidence().model_dump(mode="json"),
+                "dependencies": ["epi_mass_measurement"],
+                "derivation": "The calibrated reading is positive.",
+            }
+        )
+
+
+def test_boundary_parser_accepts_attributed_exploratory_item() -> None:
+    item = parse_epistemic_item(
+        {
+            "id": "epi_attributed_hypothesis",
+            "category": "exploratory_item",
+            "exploratory_type": "hypothesis",
+            "statement": "The observed effect may depend on temperature.",
+            "uncertainty": medium_confidence().model_dump(mode="json"),
+            "provenance": {
+                "origin": "Connection Finder role run",
+                "locator": "run-2",
+            },
+            "based_on": ["epi_temperature_observation"],
+        }
+    )
+
+    assert isinstance(item, ExploratoryItem)
+    assert item.provenance.origin == "Connection Finder role run"
