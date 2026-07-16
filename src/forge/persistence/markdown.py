@@ -185,9 +185,21 @@ def _epistemic_lines(items: Iterable[EpistemicItem]) -> list[str]:
             )
         )
         if isinstance(item, Evidence):
-            lines.append(f"  - Provenance: {_markdown_text(item.provenance.origin)}")
+            lines.extend(_provenance_lines(item.provenance.origin, item.provenance.locator))
+            for field_name, value in item.details.model_dump(mode="json").items():
+                if field_name != "evidence_type" and value is not None:
+                    label = field_name.replace("_", " ").title()
+                    lines.append(f"  - {label}: {_markdown_text(str(value))}")
+        elif isinstance(item, Premise):
+            lines.append(f"  - Origin: {_markdown_text(item.origin)}")
         if isinstance(item, DerivedClaim):
+            lines.extend(_provenance_lines(item.provenance.origin, item.provenance.locator))
             lines.append(f"  - Dependencies: {', '.join(item.dependencies)}")
+            lines.append(f"  - Derivation: {_markdown_text(item.derivation)}")
+        elif isinstance(item, ExploratoryItem):
+            lines.extend(_provenance_lines(item.provenance.origin, item.provenance.locator))
+            if item.based_on:
+                lines.append(f"  - Based on: {', '.join(item.based_on)}")
         if item.links:
             rendered_links = ", ".join(f"{link.kind.value} {link.target_id}" for link in item.links)
             lines.append(f"  - Relationships: {_markdown_text(rendered_links)}")
@@ -262,7 +274,15 @@ def _bullet_lines(values: Iterable[str]) -> list[str]:
 
 
 def _markdown_text(value: str | None) -> str:
-    return html.escape(value or "", quote=False).replace("\n", "\n    ")
+    escaped = html.escape(value or "", quote=False)
+    for character in ("\\", "`", "[", "]", "(", ")"):
+        escaped = escaped.replace(character, f"\\{character}")
+    return escaped.replace("\n", "\n    ")
+
+
+def _provenance_lines(origin: str, locator: str | None) -> list[str]:
+    location = f" — {_markdown_text(locator)}" if locator else ""
+    return [f"  - Provenance: {_markdown_text(origin)}{location}"]
 
 
 def _sync_directory(directory: Path) -> None:

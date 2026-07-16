@@ -168,6 +168,7 @@ def test_generated_markdown_is_readable_and_keeps_categories_visible(tmp_path: P
     repository = MarkdownInvestigationRepository(tmp_path)
 
     text = repository.save(investigation_record()).read_text(encoding="utf-8")
+    human_section = text.split("<!-- forge-record:begin v1 -->", maxsplit=1)[0]
 
     for heading in (
         "# Investigation: Why do repeated readings differ?",
@@ -180,10 +181,30 @@ def test_generated_markdown_is_readable_and_keeps_categories_visible(tmp_path: P
         "## Unresolved questions",
         "## Workflow history",
     ):
-        assert heading in text
-    assert "measurement" in text
-    assert "sources/lab-notes.txt" in text
+        assert heading in human_section
+    assert "measurement" in human_section
+    assert "Calibrated digital scale" in human_section
+    assert "kilogram" in human_section
+    assert "Stable indoor surface" in human_section
+    assert "Synthesizer role" in human_section
+    assert "Connection Finder role" in human_section
+    assert "sources/lab-notes.txt" in human_section
     assert "OPENROUTER_API_KEY" not in text
+
+
+def test_untrusted_markdown_is_escaped_in_the_human_readable_section(tmp_path: Path) -> None:
+    repository = MarkdownInvestigationRepository(tmp_path)
+    record = investigation_record().model_copy(
+        update={"seed": "<script>alert(1)</script> [click](javascript:alert(1))"}
+    )
+
+    text = repository.save(record).read_text(encoding="utf-8")
+    human_section = text.split("<!-- forge-record:begin v1 -->", maxsplit=1)[0]
+
+    assert "<script>" not in human_section
+    assert "[click](javascript:alert(1))" not in human_section
+    assert "&lt;script&gt;" in human_section
+    assert r"\[click\]\(javascript:alert\(1\)\)" in human_section
 
 
 def test_save_rejects_an_active_incomplete_record(tmp_path: Path) -> None:
