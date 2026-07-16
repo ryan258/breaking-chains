@@ -1,0 +1,262 @@
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from forge.application.decisions import (
+    ChoiceLetter,
+    DecisionAttempt,
+    DecisionKind,
+    DecisionOption,
+    DecisionPrompt,
+)
+from forge.domain.epistemics import (
+    Confidence,
+    ConfidenceLevel,
+    DerivedClaim,
+    EpistemicLink,
+    Evidence,
+    ExploratoryItem,
+    ExploratoryType,
+    LinkKind,
+    MeasurementDetails,
+    Premise,
+    Provenance,
+)
+from forge.domain.investigation import DepthMode, InvestigationWorkflow, WorkflowStage
+from forge.persistence.markdown import MarkdownInvestigationRepository, RecordFormatError
+from forge.persistence.metadata import (
+    ActionProposal,
+    ChallengeDisposition,
+    InvestigationRecord,
+    LocalSourceReference,
+    SkepticalChallenge,
+)
+
+STARTED = datetime(2026, 7, 16, 12, 0, tzinfo=UTC)
+
+
+def confidence() -> Confidence:
+    return Confidence(level=ConfidenceLevel.MEDIUM, rationale="Supported but not fully tested.")
+
+
+def mode_decision() -> DecisionAttempt:
+    prompt = DecisionPrompt(
+        id="depth-mode",
+        kind=DecisionKind.MODE,
+        question="How deeply should we investigate?",
+        options=(
+            DecisionOption(
+                letter=ChoiceLetter.A,
+                label="Standard",
+                description="Balanced depth and speed.",
+                is_recommended=True,
+            ),
+            DecisionOption(letter=ChoiceLetter.B, label="Quick", description="Fast triage."),
+            DecisionOption(letter=ChoiceLetter.C, label="Deep", description="Broader analysis."),
+            DecisionOption(letter=ChoiceLetter.D, label="Pause", description="Decide later."),
+            DecisionOption(
+                letter=ChoiceLetter.E,
+                label="Custom answer",
+                description="Add only as much detail as desired.",
+                accepts_custom_input=True,
+            ),
+        ),
+    )
+    return DecisionAttempt(prompt=prompt, selection=prompt.options[0])
+
+
+def paused_workflow() -> InvestigationWorkflow:
+    workflow = InvestigationWorkflow.start(depth=DepthMode.STANDARD, at=STARTED)
+    for minute, stage in enumerate(
+        (
+            WorkflowStage.FOCUS_CHECKPOINT,
+            WorkflowStage.PREMISES_EXTRACTED,
+            WorkflowStage.EVIDENCE_CHECKPOINT,
+        ),
+        start=1,
+    ):
+        workflow = workflow.advance(stage, at=STARTED + timedelta(minutes=minute))
+    return workflow.pause(at=STARTED + timedelta(minutes=4))
+
+
+def investigation_record() -> InvestigationRecord:
+    premise = Premise(
+        id="epi_closed_system",
+        statement="The system is closed during measurement.",
+        uncertainty=confidence(),
+        origin="Investigation setup",
+    )
+    evidence = Evidence(
+        id="epi_mass_reading",
+        statement="The sample measured 2.4 kilograms.",
+        uncertainty=confidence(),
+        provenance=Provenance(origin="lab-notes.txt", locator="line 12"),
+        details=MeasurementDetails(
+            method="Calibrated digital scale",
+            unit="kilogram",
+            conditions="Stable indoor surface",
+        ),
+    )
+    claim = DerivedClaim(
+        id="epi_nonzero_mass",
+        statement="The sample has nonzero mass.",
+        uncertainty=confidence(),
+        provenance=Provenance(origin="Synthesizer role", locator="run-1"),
+        dependencies=(premise.id, evidence.id),
+        derivation="A positive calibrated measurement implies nonzero mass.",
+        links=(EpistemicLink(kind=LinkKind.SUPPORTS, target_id=evidence.id),),
+    )
+    hypothesis = ExploratoryItem(
+        id="epi_temperature_connection",
+        statement="Temperature may explain variation between readings.",
+        uncertainty=confidence(),
+        provenance=Provenance(origin="Connection Finder role", locator="run-1"),
+        exploratory_type=ExploratoryType.CONNECTION,
+        based_on=(evidence.id,),
+    )
+    return InvestigationRecord(
+        id="inv_mass_question",
+        seed="Why do repeated readings differ?",
+        selected_focus="Test whether measurement conditions explain the variation.",
+        workflow=paused_workflow(),
+        epistemic_items=(premise, evidence, claim, hypothesis),
+        decisions=(mode_decision(),),
+        source_references=(
+            LocalSourceReference(
+                path="sources/lab-notes.txt",
+                sha256="a" * 64,
+                locator="lines 10-14",
+            ),
+        ),
+        skeptical_challenges=(
+            SkepticalChallenge(
+                target_id=hypothesis.id,
+                challenge="Only one environment has been observed.",
+                disposition=ChallengeDisposition.REVISE,
+                rationale="Narrow the hypothesis until another environment is measured.",
+            ),
+        ),
+        selected_action=ActionProposal(
+            statement="Repeat the measurement at two controlled temperatures.",
+            expected_observation="Variation tracks temperature.",
+            disconfirming_observation="Variation is unchanged across temperatures.",
+            cost="Two measurement sessions.",
+            risk="Low.",
+            stopping_condition="Stop after three readings per temperature.",
+        ),
+        unresolved_questions=("Does humidity also affect the scale?",),
+    )
+
+
+def test_record_round_trips_without_losing_domain_content(tmp_path: Path) -> None:
+    repository = MarkdownInvestigationRepository(tmp_path)
+    original = investigation_record()
+
+    path = repository.save(original)
+    restored = repository.load(original.id)
+
+    assert path == tmp_path / "inv_mass_question.md"
+    assert restored == original
+    assert restored.epistemic_items[2].links == original.epistemic_items[2].links
+    assert restored.workflow.history == original.workflow.history
+    assert restored.decisions == original.decisions
+
+
+def test_generated_markdown_is_readable_and_keeps_categories_visible(tmp_path: Path) -> None:
+    repository = MarkdownInvestigationRepository(tmp_path)
+
+    text = repository.save(investigation_record()).read_text(encoding="utf-8")
+
+    for heading in (
+        "# Investigation: Why do repeated readings differ?",
+        "## Premises",
+        "## Evidence",
+        "## Derived claims",
+        "## Connections and hypotheses",
+        "## Skeptical challenges",
+        "## Selected action",
+        "## Unresolved questions",
+        "## Workflow history",
+    ):
+        assert heading in text
+    assert "measurement" in text
+    assert "sources/lab-notes.txt" in text
+    assert "OPENROUTER_API_KEY" not in text
+
+
+def test_save_rejects_an_active_incomplete_record(tmp_path: Path) -> None:
+    record = investigation_record()
+    active = InvestigationWorkflow.start(depth=DepthMode.STANDARD, at=STARTED)
+
+    with pytest.raises(ValidationError, match="only paused or completed investigations"):
+        InvestigationRecord.model_validate(record.model_dump() | {"workflow": active})
+
+
+def test_source_references_store_location_and_hash_but_no_content() -> None:
+    reference = LocalSourceReference(
+        path="sources/observation.txt",
+        sha256="b" * 64,
+        locator="paragraph 3",
+    )
+
+    assert reference.model_dump() == {
+        "path": "sources/observation.txt",
+        "sha256": "b" * 64,
+        "locator": "paragraph 3",
+    }
+    with pytest.raises(ValidationError):
+        LocalSourceReference.model_validate(reference.model_dump() | {"content": "private text"})
+    with pytest.raises(ValidationError):
+        LocalSourceReference(path="bad\npath", sha256="not-a-hash", locator="line 1")
+
+
+def test_investigation_id_cannot_escape_repository_root(tmp_path: Path) -> None:
+    payload = investigation_record().model_dump()
+    payload["id"] = "../outside"
+
+    with pytest.raises(ValidationError):
+        InvestigationRecord.model_validate(payload)
+
+
+def test_failed_atomic_replace_preserves_previous_valid_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = MarkdownInvestigationRepository(tmp_path)
+    original = investigation_record()
+    target = repository.save(original)
+    previous_text = target.read_text(encoding="utf-8")
+    changed = original.model_copy(
+        update={"seed": "A changed seed that must not replace the record."}
+    )
+
+    def interrupted_replace(source: Path | str, destination: Path | str) -> None:
+        raise OSError("simulated interruption")
+
+    monkeypatch.setattr("forge.persistence.markdown.os.replace", interrupted_replace)
+
+    with pytest.raises(OSError, match="simulated interruption"):
+        repository.save(changed)
+
+    assert target.read_text(encoding="utf-8") == previous_text
+    assert tuple(tmp_path.glob("*.tmp")) == ()
+
+
+def test_load_rejects_missing_or_unknown_machine_metadata(tmp_path: Path) -> None:
+    repository = MarkdownInvestigationRepository(tmp_path)
+    target = tmp_path / "inv_mass_question.md"
+    target.write_text("# Looks readable but has no canonical metadata\n", encoding="utf-8")
+
+    with pytest.raises(RecordFormatError, match="metadata block"):
+        repository.load("inv_mass_question")
+
+
+def test_committed_fixture_is_a_valid_human_readable_record() -> None:
+    fixture_root = Path(__file__).parents[1] / "fixtures"
+    repository = MarkdownInvestigationRepository(fixture_root)
+
+    record = repository.load("inv_mass_question")
+
+    assert record == investigation_record()
