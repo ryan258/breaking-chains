@@ -1,0 +1,31 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+.streamlit/secrets.toml
+
+# Forge runtime data and private source material
+data/
+private/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python environments, caches, and build output
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
