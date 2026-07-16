@@ -156,7 +156,7 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 - [x] `uv run pytest tests/unit`
 - [x] `uv run ruff check .`
 - [x] `uv run ruff format --check .`
-- [ ] Review a serialized fixture and confirm premises, evidence, claims, and hypotheses remain visibly distinct.
+- [x] Review a serialized fixture and confirm premises, evidence, claims, and hypotheses remain visibly distinct.
 
 ## Phase 2: Durable and Resumable Records
 
@@ -166,14 +166,14 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Acceptance criteria:**
 
-- [ ] A domain investigation round-trips through Markdown without losing epistemic items, relationships, decisions, or workflow history.
-- [ ] Interrupted writes cannot replace a valid record with a partial file.
-- [ ] Local source references include paths, hashes, and locations without embedding secrets.
+- [x] A domain investigation round-trips through Markdown without losing epistemic items, relationships, decisions, or workflow history.
+- [x] Interrupted writes cannot replace a valid record with a partial file.
+- [x] Local source references include paths, hashes, and locations without embedding secrets.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/integration/test_markdown_repository.py`
-- [ ] Manual check: open a generated fixture and understand the investigation without the application.
+- [x] `uv run pytest tests/integration/test_markdown_repository.py`
+- [x] Manual check: open a generated fixture and understand the investigation without the application.
 
 **Dependencies:** Task 3.
 
