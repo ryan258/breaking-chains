@@ -1,11 +1,18 @@
+import pytest
 from pydantic import ValidationError
 
 from forge.domain.epistemics import (
     Confidence,
     ConfidenceLevel,
+    DerivedClaim,
+    DirectObservationDetails,
+    EpistemicLink,
     Evidence,
+    ExperimentResultDetails,
+    LinkKind,
     MeasurementDetails,
     Premise,
+    PrimarySourceDetails,
     Provenance,
     new_epistemic_item_id,
     parse_epistemic_item,
@@ -120,3 +127,112 @@ def test_boundary_parser_rejects_category_confusion() -> None:
         assert "evidence" in str(error)
     else:
         raise AssertionError("a premise-shaped payload must not validate as evidence")
+
+
+@pytest.mark.parametrize(
+    "details_type,payload",
+    [
+        (
+            DirectObservationDetails,
+            {
+                "evidence_type": "direct_observation",
+                "observer": "",
+                "conditions": "Observed in daylight",
+            },
+        ),
+        (
+            PrimarySourceDetails,
+            {
+                "evidence_type": "primary_source",
+                "source_reference": "",
+            },
+        ),
+        (
+            ExperimentResultDetails,
+            {
+                "evidence_type": "experiment_result",
+                "procedure": "Repeat the trial three times",
+                "reproducibility_notes": "",
+            },
+        ),
+    ],
+)
+def test_each_evidence_subtype_requires_its_inspection_context(
+    details_type: type[DirectObservationDetails]
+    | type[PrimarySourceDetails]
+    | type[ExperimentResultDetails],
+    payload: dict[str, str],
+) -> None:
+    with pytest.raises(ValidationError):
+        details_type.model_validate(payload)
+
+
+def test_derived_claim_names_unique_nonself_dependencies() -> None:
+    claim = DerivedClaim(
+        id="epi_claim_mass",
+        statement="The sample has nonzero mass.",
+        uncertainty=medium_confidence(),
+        dependencies=("epi_mass_measurement", "epi_scale_premise"),
+        derivation="The calibrated reading is positive under the adopted scale premise.",
+    )
+
+    assert claim.dependencies == ("epi_mass_measurement", "epi_scale_premise")
+
+
+@pytest.mark.parametrize(
+    "dependencies",
+    [
+        (),
+        ("epi_claim_mass",),
+        ("epi_mass_measurement", "epi_mass_measurement"),
+    ],
+)
+def test_derived_claim_rejects_empty_self_or_duplicate_dependencies(
+    dependencies: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValidationError):
+        DerivedClaim(
+            id="epi_claim_mass",
+            statement="The sample has nonzero mass.",
+            uncertainty=medium_confidence(),
+            dependencies=dependencies,
+            derivation="The calibrated reading is positive.",
+        )
+
+
+def test_relationships_reject_self_links_and_duplicate_links() -> None:
+    self_link = EpistemicLink(kind=LinkKind.SUPPORTS, target_id="epi_source_item")
+
+    with pytest.raises(ValidationError):
+        Premise(
+            id="epi_source_item",
+            statement="The system is closed.",
+            uncertainty=medium_confidence(),
+            origin="Experiment setup",
+            links=(self_link,),
+        )
+
+    duplicate_link = EpistemicLink(kind=LinkKind.CONTRADICTS, target_id="epi_other_item")
+    with pytest.raises(ValidationError):
+        Premise(
+            id="epi_source_item",
+            statement="The system is closed.",
+            uncertainty=medium_confidence(),
+            origin="Experiment setup",
+            links=(duplicate_link, duplicate_link),
+        )
+
+
+def test_epistemic_items_are_immutable_and_reject_unknown_fields() -> None:
+    premise = Premise(
+        id="epi_closed_system",
+        statement="The system is closed.",
+        uncertainty=medium_confidence(),
+        origin="Experiment setup",
+    )
+
+    with pytest.raises(ValidationError):
+        premise.statement = "Changed after validation."
+
+    with pytest.raises(ValidationError):
+        Premise.model_validate(premise.model_dump() | {"promoted_to_evidence": True})

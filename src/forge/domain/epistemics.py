@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 
 from forge.domain.identifiers import EpistemicItemId, new_epistemic_item_id
 
@@ -37,6 +37,22 @@ class Provenance(DomainModel):
 
     origin: NonEmptyText
     locator: OptionalText = None
+
+
+class LinkKind(StrEnum):
+    """Traceable relationships between epistemic items."""
+
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    QUALIFIES = "qualifies"
+    CONNECTS = "connects"
+
+
+class EpistemicLink(DomainModel):
+    """A typed relationship to another epistemic item."""
+
+    kind: LinkKind
+    target_id: EpistemicItemId
 
 
 class DirectObservationDetails(DomainModel):
@@ -84,7 +100,17 @@ class BaseEpistemicItem(DomainModel):
     id: EpistemicItemId = Field(default_factory=new_epistemic_item_id)
     statement: NonEmptyText
     uncertainty: Confidence
+    links: tuple[EpistemicLink, ...] = ()
     notes: OptionalText = None
+
+    @model_validator(mode="after")
+    def validate_links(self) -> "BaseEpistemicItem":
+        link_keys = tuple((link.kind, link.target_id) for link in self.links)
+        if any(link.target_id == self.id for link in self.links):
+            raise ValueError("epistemic items cannot link to themselves")
+        if len(link_keys) != len(set(link_keys)):
+            raise ValueError("epistemic links must be unique")
+        return self
 
 
 class Premise(BaseEpistemicItem):
@@ -108,6 +134,14 @@ class DerivedClaim(BaseEpistemicItem):
     category: Literal["derived_claim"] = "derived_claim"
     dependencies: tuple[EpistemicItemId, ...] = Field(min_length=1)
     derivation: NonEmptyText
+
+    @model_validator(mode="after")
+    def validate_dependencies(self) -> "DerivedClaim":
+        if self.id in self.dependencies:
+            raise ValueError("derived claims cannot depend on themselves")
+        if len(self.dependencies) != len(set(self.dependencies)):
+            raise ValueError("derived claim dependencies must be unique")
+        return self
 
 
 class ExploratoryType(StrEnum):
@@ -146,11 +180,13 @@ __all__ = [
     "ConfidenceLevel",
     "DerivedClaim",
     "DirectObservationDetails",
+    "EpistemicLink",
     "EpistemicItem",
     "Evidence",
     "ExperimentResultDetails",
     "ExploratoryItem",
     "ExploratoryType",
+    "LinkKind",
     "MeasurementDetails",
     "Premise",
     "PrimarySourceDetails",
