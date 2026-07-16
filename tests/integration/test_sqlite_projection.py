@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from pathlib import Path
 
@@ -15,7 +16,8 @@ def fixture_record():
 
 def test_projection_preserves_resumable_state_and_relationships(tmp_path: Path) -> None:
     record = fixture_record()
-    projection = SQLiteProjection(tmp_path / "forge.sqlite3")
+    database_path = tmp_path / "data" / "forge.sqlite3"
+    projection = SQLiteProjection(database_path)
 
     projection.save(record)
 
@@ -27,6 +29,8 @@ def test_projection_preserves_resumable_state_and_relationships(tmp_path: Path) 
         ("epi_nonzero_mass", "supports", record.id, "epi_mass_reading"),
         ("epi_temperature_connection", "based_on", record.id, "epi_mass_reading"),
     }
+    assert os.stat(database_path.parent).st_mode & 0o777 == 0o700
+    assert os.stat(database_path).st_mode & 0o777 == 0o600
 
 
 def test_search_finds_items_by_text_and_category(tmp_path: Path) -> None:

@@ -5,7 +5,7 @@ import pytest
 
 from forge.application.decisions import ChoiceLetter
 from forge.application.orchestrator import InvestigationOrchestrator
-from forge.domain.investigation import DepthMode, WorkflowStage
+from forge.domain.investigation import DepthMode, WorkflowStage, WorkflowStatus
 from forge.gateways.fake import DeterministicSpecialistRunner
 from forge.gateways.model import ModelRole
 from forge.persistence.markdown import MarkdownInvestigationRepository
@@ -167,3 +167,118 @@ def test_projection_failure_restores_pending_checkpoint_before_any_role_runs(
     assert markdown.load(focus.record.id) == focus.record
     assert store.load(focus.record.id).pending_decision == focus.prompt
     assert runner.calls == []
+
+
+def test_invalid_choice_keeps_checkpoint_without_running_a_role(tmp_path: Path) -> None:
+    orchestrator, _, runner, _, _ = setup_orchestrator(tmp_path)
+    focus = orchestrator.start(
+        investigation_id="inv_invalid_checkpoint_choice",
+        seed="What should invalid input do?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+
+    result = orchestrator.submit_decision(
+        focus.record.id,
+        prompt_id=focus.prompt.id,
+        raw_choice="not-a-letter",
+    )
+
+    assert result.error == "Choose A, B, C, D, or E."
+    assert result.prompt == focus.prompt
+    assert runner.calls == []
+
+
+def test_paused_checkpoint_rejects_input_until_resumed(tmp_path: Path) -> None:
+    orchestrator, _, runner, _, _ = setup_orchestrator(tmp_path)
+    focus = orchestrator.start(
+        investigation_id="inv_paused_checkpoint",
+        seed="Can an old screen advance paused work?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+    paused = orchestrator.pause(focus.record.id)
+
+    result = orchestrator.submit_decision(
+        paused.record.id,
+        prompt_id=paused.prompt.id,
+        raw_choice="A",
+    )
+
+    assert result.error == "Resume this investigation before choosing."
+    assert result.record == paused.record
+    assert runner.calls == []
+
+
+def test_evidence_pause_choice_stops_before_connection_work(tmp_path: Path) -> None:
+    orchestrator, _, runner, _, _ = setup_orchestrator(tmp_path)
+    focus = orchestrator.start(
+        investigation_id="inv_evidence_pause",
+        seed="Should D really pause?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+    evidence = choose_a(orchestrator, focus)
+
+    paused = orchestrator.submit_decision(
+        evidence.record.id,
+        prompt_id=evidence.prompt.id,
+        raw_choice="D",
+    )
+
+    assert paused.record.workflow.status is WorkflowStatus.PAUSED
+    assert runner.calls == [ModelRole.RESEARCHER]
+
+    resumed = orchestrator.resume(paused.record.id)
+
+    assert resumed.record.workflow.stage is WorkflowStage.ACTION_CHECKPOINT
+    assert runner.calls[-4:] == [
+        ModelRole.CONNECTION_FINDER,
+        ModelRole.SYNTHESIZER,
+        ModelRole.SKEPTIC,
+        ModelRole.EXPERIMENT_DESIGNER,
+    ]
+
+
+def test_action_rejection_completes_without_a_selected_action(tmp_path: Path) -> None:
+    orchestrator, _, _, _, _ = setup_orchestrator(tmp_path)
+    focus = orchestrator.start(
+        investigation_id="inv_reject_action",
+        seed="Can the proposed action be rejected?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+    evidence = choose_a(orchestrator, focus)
+    action = choose_a(orchestrator, evidence)
+
+    completed = orchestrator.submit_decision(
+        action.record.id,
+        prompt_id=action.prompt.id,
+        raw_choice="C",
+    )
+
+    assert completed.record.workflow.stage is WorkflowStage.COMPLETED
+    assert completed.record.selected_action is None
+
+
+def test_custom_action_replaces_the_proposed_statement(tmp_path: Path) -> None:
+    orchestrator, _, _, _, _ = setup_orchestrator(tmp_path)
+    focus = orchestrator.start(
+        investigation_id="inv_custom_action",
+        seed="Can the action be customized?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+    evidence = choose_a(orchestrator, focus)
+    action = choose_a(orchestrator, evidence)
+
+    completed = orchestrator.submit_decision(
+        action.record.id,
+        prompt_id=action.prompt.id,
+        raw_choice="E",
+        custom_answer="Run the comparison with one system first.",
+    )
+
+    assert completed.record.workflow.stage is WorkflowStage.COMPLETED
+    assert completed.record.selected_action is not None
+    assert completed.record.selected_action.statement == "Run the comparison with one system first."

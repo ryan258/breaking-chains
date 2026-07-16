@@ -1,5 +1,6 @@
 """Rebuildable SQLite projection for workflow state and epistemic search."""
 
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -119,6 +120,12 @@ class SQLiteProjection:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.path.parent, 0o700)
+        if self.path.is_symlink():
+            raise ValueError("SQLite projection cannot be a symbolic link")
+        descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
+        os.close(descriptor)
+        os.chmod(self.path, 0o600)
         with self._connect() as connection:
             connection.executescript(_SCHEMA)
             row = connection.execute("SELECT version FROM schema_info LIMIT 1").fetchone()

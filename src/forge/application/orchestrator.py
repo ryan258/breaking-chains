@@ -121,6 +121,12 @@ class InvestigationOrchestrator:
         record = self._store.load(investigation_id)
         prompt = record.pending_decision
         expected_kind = self._expected_decision_kind(record.workflow.stage)
+        if record.workflow.status is WorkflowStatus.PAUSED:
+            return OrchestrationView(
+                record=record,
+                prompt=prompt,
+                error="Resume this investigation before choosing.",
+            )
         if prompt is None or prompt.id != prompt_id or prompt.kind is not expected_kind:
             return OrchestrationView(
                 record=record,
@@ -130,20 +136,40 @@ class InvestigationOrchestrator:
         attempt = submit_decision(prompt, raw_choice, custom_answer=custom_answer)
         if attempt.error is not None:
             return OrchestrationView(record=record, prompt=prompt, error=attempt.error)
+        assert attempt.selection is not None
 
         updates: dict[str, object] = {
             "decisions": (*record.decisions, attempt),
             "pending_decision": None,
         }
-        if record.workflow.stage is WorkflowStage.FOCUS_CHECKPOINT:
+        stage = record.workflow.stage
+        letter = attempt.selection.letter
+        should_pause = (
+            stage is WorkflowStage.EVIDENCE_CHECKPOINT and letter is ChoiceLetter.D
+        ) or (
+            stage is WorkflowStage.ACTION_CHECKPOINT and letter in {ChoiceLetter.B, ChoiceLetter.D}
+        )
+        if should_pause:
+            updates["workflow"] = record.workflow.pause(at=self._at(record))
+
+        if stage is WorkflowStage.FOCUS_CHECKPOINT:
             updates["selected_focus"] = attempt.custom_answer or attempt.selection.label
-        elif record.workflow.stage is WorkflowStage.EVIDENCE_CHECKPOINT and attempt.custom_answer:
+        elif stage is WorkflowStage.EVIDENCE_CHECKPOINT and attempt.custom_answer:
             updates["unresolved_questions"] = (
                 *record.unresolved_questions,
                 attempt.custom_answer,
             )
+        elif stage is WorkflowStage.ACTION_CHECKPOINT:
+            if letter is ChoiceLetter.C:
+                updates["selected_action"] = None
+            elif letter is ChoiceLetter.E and record.selected_action is not None:
+                updates["selected_action"] = record.selected_action.model_copy(
+                    update={"statement": attempt.custom_answer}
+                )
         record = record.model_copy(update=updates)
         self._store.save(record)
+        if should_pause:
+            return OrchestrationView(record=record, prompt=None)
         return self.run_until_checkpoint(investigation_id)
 
     def pause(self, investigation_id: str) -> OrchestrationView:
