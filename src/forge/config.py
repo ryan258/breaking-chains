@@ -1,7 +1,7 @@
 """Validated, secret-safe application configuration."""
 
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 from pydantic import (
     Field,
@@ -14,8 +14,9 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from forge.domain.investigation import DepthMode
+
 ModelIdentifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-DepthMode = Literal["quick", "standard", "deep"]
 
 _ENVIRONMENT_NAMES = {
     "openrouter_api_key": "OPENROUTER_API_KEY",
@@ -61,7 +62,7 @@ class ForgeSettings(BaseSettings):
     model_skeptic: ModelIdentifier
     model_experiment_designer: ModelIdentifier
 
-    default_depth: DepthMode = "standard"
+    default_depth: DepthMode = DepthMode.STANDARD
     data_dir: Path = Path("data")
 
     quick_max_calls: PositiveInt = 6

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from forge.config import ConfigurationError, load_settings
+from forge.domain.investigation import DepthMode
 
 REQUIRED_ENVIRONMENT = {
     "OPENROUTER_API_KEY": "not-a-real-key",
@@ -39,7 +40,7 @@ def test_loads_required_values_with_approved_defaults(
     assert settings.model_synthesizer == "vendor/synthesis-model"
     assert settings.model_skeptic == "vendor/skeptic-model"
     assert settings.model_experiment_designer == "vendor/experiment-model"
-    assert settings.default_depth == "standard"
+    assert settings.default_depth is DepthMode.STANDARD
     assert settings.data_dir == Path("data")
     assert settings.quick_max_calls == 6
     assert settings.standard_max_calls == 10
