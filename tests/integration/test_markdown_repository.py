@@ -212,15 +212,15 @@ def test_untrusted_markdown_is_escaped_in_the_human_readable_section(tmp_path: P
     assert r"\[click\]\(javascript:alert\(1\)\)" in human_section
 
 
-def test_save_rejects_an_active_incomplete_record(tmp_path: Path) -> None:
+def test_active_working_record_round_trips_for_stage_level_resume(tmp_path: Path) -> None:
     record = investigation_record()
     active = InvestigationWorkflow.start(depth=DepthMode.STANDARD, at=STARTED)
-    invalid_copy = record.model_copy(update={"workflow": active})
+    working = InvestigationRecord.model_validate(record.model_dump() | {"workflow": active})
 
-    with pytest.raises(ValidationError, match="only paused or completed investigations"):
-        InvestigationRecord.model_validate(record.model_dump() | {"workflow": active})
-    with pytest.raises(RecordFormatError, match="invalid investigation record"):
-        MarkdownInvestigationRepository(tmp_path).save(invalid_copy)
+    repository = MarkdownInvestigationRepository(tmp_path)
+    repository.save(working)
+
+    assert repository.load(working.id) == working
 
 
 def test_source_references_store_location_and_hash_but_no_content() -> None:

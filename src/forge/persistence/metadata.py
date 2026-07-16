@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator, 
 from forge.application.decisions import DecisionAttempt
 from forge.domain.epistemics import EpistemicItem
 from forge.domain.identifiers import EpistemicItemId, InvestigationId
-from forge.domain.investigation import InvestigationWorkflow, WorkflowStage, WorkflowStatus
+from forge.domain.investigation import InvestigationWorkflow
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalText = NonEmptyText | None
@@ -84,11 +84,6 @@ class InvestigationRecord(MetadataModel):
 
     @model_validator(mode="after")
     def validate_canonical_record(self) -> "InvestigationRecord":
-        if (
-            self.workflow.status is not WorkflowStatus.PAUSED
-            and self.workflow.stage is not WorkflowStage.COMPLETED
-        ):
-            raise ValueError("only paused or completed investigations are canonical records")
         item_ids = tuple(item.id for item in self.epistemic_items)
         if len(item_ids) != len(set(item_ids)):
             raise ValueError("epistemic item identifiers must be unique within a record")

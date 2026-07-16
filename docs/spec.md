@@ -265,7 +265,7 @@ Every A-E button must have a rendered target of at least 44 by 44 CSS pixels, an
 
 ### Canonical Markdown
 
-Each completed or paused investigation has a Markdown file under `outputs/investigations/<id>.md`. It includes:
+Each investigation has a working Markdown file under `outputs/investigations/<id>.md` from its first persisted stage onward. Active, paused, and completed states share the same record so every finished stage is restart-safe. It includes:
 
 1. seed and selected focus;
 2. depth mode and timestamps;
