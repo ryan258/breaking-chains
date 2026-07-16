@@ -42,6 +42,8 @@ class InvestigationStore(Protocol):
 
     def load(self, investigation_id: str) -> InvestigationRecord: ...
 
+    def exists(self, investigation_id: str) -> bool: ...
+
 
 @dataclass(frozen=True)
 class OrchestrationView:
@@ -88,6 +90,8 @@ class InvestigationOrchestrator:
         depth: DepthMode,
         at: datetime,
     ) -> OrchestrationView:
+        if self._store.exists(investigation_id):
+            return self.run_until_checkpoint(investigation_id)
         record = InvestigationRecord(
             id=investigation_id,
             seed=seed,
@@ -145,7 +149,9 @@ class InvestigationOrchestrator:
     def pause(self, investigation_id: str) -> OrchestrationView:
         record = self._store.load(investigation_id)
         if record.workflow.status is WorkflowStatus.ACTIVE:
-            record = record.model_copy(update={"workflow": record.workflow.pause(at=self._clock())})
+            record = record.model_copy(
+                update={"workflow": record.workflow.pause(at=self._at(record))}
+            )
             self._store.save(record)
         return OrchestrationView(record=record, prompt=record.pending_decision)
 
@@ -153,7 +159,7 @@ class InvestigationOrchestrator:
         record = self._store.load(investigation_id)
         if record.workflow.status is WorkflowStatus.PAUSED:
             record = record.model_copy(
-                update={"workflow": record.workflow.resume(at=self._clock())}
+                update={"workflow": record.workflow.resume(at=self._at(record))}
             )
             self._store.save(record)
         return self.run_until_checkpoint(investigation_id)
@@ -182,7 +188,7 @@ class InvestigationOrchestrator:
         record: InvestigationRecord,
         stage: WorkflowStage,
     ) -> InvestigationRecord:
-        advanced = record.workflow.advance(stage, at=self._clock())
+        advanced = record.workflow.advance(stage, at=self._at(record))
         checkpoint = record.model_copy(
             update={"workflow": advanced, "pending_decision": _decision_prompt(record.id, stage)}
         )
@@ -195,7 +201,7 @@ class InvestigationOrchestrator:
         stage: WorkflowStage,
     ) -> InvestigationRecord:
         advanced = record.model_copy(
-            update={"workflow": record.workflow.advance(stage, at=self._clock())}
+            update={"workflow": record.workflow.advance(stage, at=self._at(record))}
         )
         self._store.save(advanced)
         return advanced
@@ -229,6 +235,11 @@ class InvestigationOrchestrator:
             WorkflowStage.EVIDENCE_CHECKPOINT: DecisionKind.EVIDENCE_CHECKPOINT,
             WorkflowStage.ACTION_CHECKPOINT: DecisionKind.ACTION_CHECKPOINT,
         }.get(stage)
+
+    def _at(self, record: InvestigationRecord) -> datetime:
+        """Keep persisted workflow time monotonic across restarts and clock skew."""
+
+        return max(self._clock(), record.workflow.updated_at)
 
 
 def _decision_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPrompt:

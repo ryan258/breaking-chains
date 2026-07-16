@@ -44,5 +44,10 @@ class InvestigationUnitOfWork:
 
         return self.markdown.load(investigation_id)
 
+    def exists(self, investigation_id: str) -> bool:
+        """Return whether canonical working state already exists."""
+
+        return self.markdown.exists(investigation_id)
+
 
 __all__ = ["InvestigationUnitOfWork", "PersistenceConsistencyError"]

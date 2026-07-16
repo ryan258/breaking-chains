@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from forge.application.decisions import ChoiceLetter
 from forge.application.orchestrator import InvestigationOrchestrator
 from forge.domain.investigation import DepthMode, WorkflowStage
@@ -31,6 +33,9 @@ class RecordingStore:
 
     def load(self, investigation_id: str):
         return self.unit_of_work.load(investigation_id)
+
+    def exists(self, investigation_id: str) -> bool:
+        return self.unit_of_work.exists(investigation_id)
 
 
 def setup_orchestrator(tmp_path: Path):
@@ -114,4 +119,51 @@ def test_stale_prompt_is_rejected_without_running_a_specialist(tmp_path: Path) -
 
     assert result.error == "That choice belongs to an older or different question."
     assert result.prompt == focus.prompt
+    assert runner.calls == []
+
+
+def test_start_is_idempotent_for_an_existing_working_record(tmp_path: Path) -> None:
+    orchestrator, _, runner, _, _ = setup_orchestrator(tmp_path)
+    focus = orchestrator.start(
+        investigation_id="inv_idempotent_start",
+        seed="Preserve this seed.",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+    evidence = choose_a(orchestrator, focus)
+
+    restarted = orchestrator.start(
+        investigation_id="inv_idempotent_start",
+        seed="Do not overwrite with this seed.",
+        depth=DepthMode.DEEP,
+        at=datetime(2026, 7, 16, 23, 0, tzinfo=UTC),
+    )
+
+    assert restarted.record == evidence.record
+    assert restarted.record.seed == "Preserve this seed."
+    assert runner.calls == [ModelRole.RESEARCHER]
+
+
+def test_projection_failure_restores_pending_checkpoint_before_any_role_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    orchestrator, store, runner, markdown, projection = setup_orchestrator(tmp_path)
+    focus = orchestrator.start(
+        investigation_id="inv_projection_rollback",
+        seed="Can a failed save lose the checkpoint?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+
+    def fail_projection_save(record: object) -> None:
+        raise RuntimeError("simulated projection failure")
+
+    monkeypatch.setattr(projection, "save", fail_projection_save)
+
+    with pytest.raises(RuntimeError, match="simulated projection failure"):
+        choose_a(orchestrator, focus)
+
+    assert markdown.load(focus.record.id) == focus.record
+    assert store.load(focus.record.id).pending_decision == focus.prompt
     assert runner.calls == []
