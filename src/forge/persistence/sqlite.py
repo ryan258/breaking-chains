@@ -66,6 +66,8 @@ CREATE INDEX IF NOT EXISTS idx_relationship_target
 _CATEGORIES = frozenset({"premise", "evidence", "derived_claim", "exploratory_item"})
 
 _MIGRATE_V1_TO_V2 = """
+BEGIN IMMEDIATE;
+
 DROP INDEX IF EXISTS idx_relationship_target;
 ALTER TABLE relationships RENAME TO relationships_v1;
 
@@ -91,6 +93,8 @@ FROM relationships_v1;
 DROP TABLE relationships_v1;
 CREATE INDEX idx_relationship_target ON relationships(target_id);
 UPDATE schema_info SET version = 2;
+
+COMMIT;
 """
 
 

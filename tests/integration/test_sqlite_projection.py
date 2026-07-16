@@ -114,6 +114,7 @@ def test_unit_of_work_removes_new_markdown_when_initial_projection_fails(
 
 def test_version_one_projection_migrates_relationship_targets(tmp_path: Path) -> None:
     database_path = tmp_path / "forge.sqlite3"
+    record = fixture_record()
     with sqlite3.connect(database_path) as connection:
         connection.executescript(
             """
@@ -149,10 +150,45 @@ def test_version_one_projection_migrates_relationship_targets(tmp_path: Path) ->
             );
             """
         )
+        connection.execute(
+            """
+            INSERT INTO investigations (
+                id, seed, selected_focus, depth, stage, status,
+                created_at, updated_at, record_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record.id,
+                record.seed,
+                record.selected_focus,
+                record.workflow.depth.value,
+                record.workflow.stage.value,
+                record.workflow.status.value,
+                record.workflow.created_at.isoformat(),
+                record.workflow.updated_at.isoformat(),
+                record.model_dump_json(),
+            ),
+        )
+        for item_id in ("epi_nonzero_mass", "epi_mass_reading"):
+            connection.execute(
+                """
+                INSERT INTO epistemic_items (
+                    investigation_id, item_id, category, subtype, statement,
+                    confidence_level, provenance_origin
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (record.id, item_id, "derived_claim", None, item_id, "medium", "legacy"),
+            )
+        connection.execute(
+            """
+            INSERT INTO relationships (
+                investigation_id, source_id, relation_kind, target_id
+            ) VALUES (?, ?, ?, ?)
+            """,
+            (record.id, "epi_nonzero_mass", "supports", "epi_mass_reading"),
+        )
 
     projection = SQLiteProjection(database_path)
-    record = fixture_record()
-    projection.save(record)
 
     with sqlite3.connect(database_path) as connection:
         version = connection.execute("SELECT version FROM schema_info").fetchone()[0]
@@ -161,9 +197,50 @@ def test_version_one_projection_migrates_relationship_targets(tmp_path: Path) ->
         }
     assert version == 2
     assert "target_investigation_id" in columns
+    assert projection.relationships(record.id) == (
+        ("epi_nonzero_mass", "supports", record.id, "epi_mass_reading"),
+    )
+
+    projection.save(record)
     assert set(projection.relationships(record.id)) == {
         ("epi_nonzero_mass", "depends_on", record.id, "epi_closed_system"),
         ("epi_nonzero_mass", "depends_on", record.id, "epi_mass_reading"),
         ("epi_nonzero_mass", "supports", record.id, "epi_mass_reading"),
         ("epi_temperature_connection", "based_on", record.id, "epi_mass_reading"),
     }
+
+
+def test_failed_version_one_migration_is_atomic(tmp_path: Path) -> None:
+    database_path = tmp_path / "failed-v1.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE schema_info (version INTEGER NOT NULL);
+            INSERT INTO schema_info (version) VALUES (1);
+            CREATE TABLE relationships (
+                investigation_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                relation_kind TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                PRIMARY KEY (investigation_id, source_id, relation_kind, target_id)
+            );
+            INSERT INTO relationships (
+                investigation_id, source_id, relation_kind, target_id
+            ) VALUES ('inv_orphan', 'epi_missing', 'supports', 'epi_target');
+            """
+        )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        SQLiteProjection(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        version = connection.execute("SELECT version FROM schema_info").fetchone()[0]
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(relationships)").fetchall()
+        }
+        legacy_row = connection.execute(
+            "SELECT investigation_id, source_id, relation_kind, target_id FROM relationships"
+        ).fetchone()
+    assert version == 1
+    assert "target_investigation_id" not in columns
+    assert legacy_row == ("inv_orphan", "epi_missing", "supports", "epi_target")
