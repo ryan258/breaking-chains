@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from forge.application.decisions import (
     ChoiceLetter,
+    DecisionAttempt,
     DecisionKind,
     DecisionOption,
     DecisionPrompt,
@@ -61,6 +62,47 @@ def test_valid_input_returns_the_matching_option() -> None:
     assert result.selection is not None
     assert result.selection.letter is ChoiceLetter.B
     assert result.error is None
+
+
+def test_e_records_a_trimmed_custom_answer() -> None:
+    prompt = decision_prompt()
+
+    result = submit_decision(prompt, " e ", custom_answer="  Follow the energy constraint.  ")
+
+    assert result.selection is not None
+    assert result.selection.letter is ChoiceLetter.E
+    assert result.custom_answer == "Follow the energy constraint."
+    assert result.error is None
+
+
+def test_e_without_detail_and_custom_detail_with_other_letters_preserve_prompt() -> None:
+    prompt = decision_prompt()
+
+    missing_detail = submit_decision(prompt, "E")
+    misplaced_detail = submit_decision(prompt, "A", custom_answer="Something else")
+
+    assert missing_detail.prompt is prompt
+    assert missing_detail.selection is None
+    assert missing_detail.error == "Option E needs a custom answer."
+    assert misplaced_detail.prompt is prompt
+    assert misplaced_detail.selection is None
+    assert misplaced_detail.error == "Custom input is only available with option E."
+
+
+def test_decision_attempt_requires_one_valid_prompt_owned_outcome() -> None:
+    prompt = decision_prompt()
+    foreign_option = DecisionOption(
+        letter=ChoiceLetter.A,
+        label="Different A",
+        description="Not one of this prompt's choices.",
+    )
+
+    with pytest.raises(ValidationError, match="exactly one outcome"):
+        DecisionAttempt(prompt=prompt)
+    with pytest.raises(ValidationError, match="exactly one outcome"):
+        DecisionAttempt(prompt=prompt, selection=prompt.options[0], error="Also failed")
+    with pytest.raises(ValidationError, match="selection must belong to its prompt"):
+        DecisionAttempt(prompt=prompt, selection=foreign_option)
 
 
 def test_every_required_decision_kind_uses_the_same_a_to_e_contract() -> None:

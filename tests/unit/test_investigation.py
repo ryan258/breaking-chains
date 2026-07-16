@@ -168,3 +168,37 @@ def test_completed_investigation_cannot_advance() -> None:
 
     with pytest.raises(ValueError, match="illegal workflow transition"):
         investigation.advance(WorkflowStage.SEEDED, at=STARTED)
+
+    with pytest.raises(ValueError, match="completed investigation is terminal"):
+        investigation.pause(at=STARTED)
+
+
+def test_deserialization_rejects_pause_after_completion() -> None:
+    investigation = InvestigationWorkflow.start(depth=DepthMode.STANDARD, at=STARTED)
+    for stage in (
+        WorkflowStage.FOCUS_CHECKPOINT,
+        WorkflowStage.PREMISES_EXTRACTED,
+        WorkflowStage.EVIDENCE_CHECKPOINT,
+        WorkflowStage.CONNECTIONS_GENERATED,
+        WorkflowStage.HYPOTHESES_SYNTHESIZED,
+        WorkflowStage.STRESS_TESTED,
+        WorkflowStage.ACTIONS_DESIGNED,
+        WorkflowStage.ACTION_CHECKPOINT,
+        WorkflowStage.COMPLETED,
+    ):
+        investigation = investigation.advance(stage, at=STARTED)
+
+    payload = investigation.model_dump()
+    payload["status"] = WorkflowStatus.PAUSED
+    payload["history"] = (
+        *payload["history"],
+        {
+            "kind": WorkflowEventKind.PAUSED,
+            "from_stage": WorkflowStage.COMPLETED,
+            "to_stage": WorkflowStage.COMPLETED,
+            "occurred_at": STARTED,
+        },
+    )
+
+    with pytest.raises(ValidationError, match="completed investigation is terminal"):
+        InvestigationWorkflow.model_validate(payload)

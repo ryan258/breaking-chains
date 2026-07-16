@@ -6,6 +6,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+OptionalText = NonEmptyText | None
 
 
 class DecisionModel(BaseModel):
@@ -72,7 +73,24 @@ class DecisionAttempt(DecisionModel):
 
     prompt: DecisionPrompt
     selection: DecisionOption | None = None
-    error: str | None = None
+    custom_answer: OptionalText = None
+    error: OptionalText = None
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> "DecisionAttempt":
+        if (self.selection is None) == (self.error is None):
+            raise ValueError("a decision attempt must contain exactly one outcome")
+        if self.selection is None:
+            if self.custom_answer is not None:
+                raise ValueError("a failed decision attempt cannot contain a custom answer")
+            return self
+        if self.selection not in self.prompt.options:
+            raise ValueError("a decision selection must belong to its prompt")
+        if self.selection.letter is ChoiceLetter.E and self.custom_answer is None:
+            raise ValueError("an E selection must include a custom answer")
+        if self.selection.letter is not ChoiceLetter.E and self.custom_answer is not None:
+            raise ValueError("custom input is only available with option E")
+        return self
 
 
 def normalize_choice(raw: str) -> ChoiceLetter:
@@ -81,7 +99,12 @@ def normalize_choice(raw: str) -> ChoiceLetter:
     return ChoiceLetter(raw.strip().upper())
 
 
-def submit_decision(prompt: DecisionPrompt, raw: str) -> DecisionAttempt:
+def submit_decision(
+    prompt: DecisionPrompt,
+    raw: str,
+    *,
+    custom_answer: str | None = None,
+) -> DecisionAttempt:
     """Apply input without replacing or discarding the active question."""
 
     try:
@@ -90,7 +113,20 @@ def submit_decision(prompt: DecisionPrompt, raw: str) -> DecisionAttempt:
         return DecisionAttempt(prompt=prompt, error="Choose A, B, C, D, or E.")
 
     selection = next(option for option in prompt.options if option.letter is letter)
-    return DecisionAttempt(prompt=prompt, selection=selection)
+    normalized_custom = custom_answer.strip() if custom_answer is not None else None
+    normalized_custom = normalized_custom or None
+    if letter is ChoiceLetter.E and normalized_custom is None:
+        return DecisionAttempt(prompt=prompt, error="Option E needs a custom answer.")
+    if letter is not ChoiceLetter.E and normalized_custom is not None:
+        return DecisionAttempt(
+            prompt=prompt,
+            error="Custom input is only available with option E.",
+        )
+    return DecisionAttempt(
+        prompt=prompt,
+        selection=selection,
+        custom_answer=normalized_custom,
+    )
 
 
 __all__ = [

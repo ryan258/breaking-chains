@@ -116,6 +116,8 @@ class InvestigationWorkflow(WorkflowModel):
         previous_time = self.created_at
 
         for event in self.history:
+            if stage is WorkflowStage.COMPLETED:
+                raise ValueError("a completed investigation is terminal")
             if event.occurred_at < previous_time:
                 raise ValueError("workflow history timestamps must be monotonic")
             if event.from_stage is not stage:
@@ -173,6 +175,8 @@ class InvestigationWorkflow(WorkflowModel):
     def pause(self, *, at: datetime) -> "InvestigationWorkflow":
         """Pause work while preserving the exact current stage."""
 
+        if self.stage is WorkflowStage.COMPLETED:
+            raise ValueError("a completed investigation is terminal")
         if self.status is WorkflowStatus.PAUSED:
             raise ValueError("investigation is already paused")
         return self._record(
@@ -185,6 +189,8 @@ class InvestigationWorkflow(WorkflowModel):
     def resume(self, *, at: datetime) -> "InvestigationWorkflow":
         """Resume work from the preserved current stage."""
 
+        if self.stage is WorkflowStage.COMPLETED:
+            raise ValueError("a completed investigation is terminal")
         if self.status is WorkflowStatus.ACTIVE:
             raise ValueError("investigation is already active")
         return self._record(
