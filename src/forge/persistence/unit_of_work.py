@@ -39,5 +39,10 @@ class InvestigationUnitOfWork:
                 ) from rollback_error
             raise
 
+    def load(self, investigation_id: str) -> InvestigationRecord:
+        """Load canonical working state for orchestration or resumption."""
+
+        return self.markdown.load(investigation_id)
+
 
 __all__ = ["InvestigationUnitOfWork", "PersistenceConsistencyError"]

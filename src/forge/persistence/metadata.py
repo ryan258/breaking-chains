@@ -5,10 +5,10 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator, model_validator
 
-from forge.application.decisions import DecisionAttempt
+from forge.application.decisions import DecisionAttempt, DecisionKind, DecisionPrompt
 from forge.domain.epistemics import EpistemicItem
 from forge.domain.identifiers import EpistemicItemId, InvestigationId
-from forge.domain.investigation import InvestigationWorkflow
+from forge.domain.investigation import InvestigationWorkflow, WorkflowStage
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 OptionalText = NonEmptyText | None
@@ -77,6 +77,7 @@ class InvestigationRecord(MetadataModel):
     workflow: InvestigationWorkflow
     epistemic_items: tuple[EpistemicItem, ...] = ()
     decisions: tuple[DecisionAttempt, ...] = ()
+    pending_decision: DecisionPrompt | None = None
     source_references: tuple[LocalSourceReference, ...] = ()
     skeptical_challenges: tuple[SkepticalChallenge, ...] = ()
     selected_action: ActionProposal | None = None
@@ -84,6 +85,16 @@ class InvestigationRecord(MetadataModel):
 
     @model_validator(mode="after")
     def validate_canonical_record(self) -> "InvestigationRecord":
+        expected_decision = {
+            WorkflowStage.FOCUS_CHECKPOINT: DecisionKind.FOCUS_CHECKPOINT,
+            WorkflowStage.EVIDENCE_CHECKPOINT: DecisionKind.EVIDENCE_CHECKPOINT,
+            WorkflowStage.ACTION_CHECKPOINT: DecisionKind.ACTION_CHECKPOINT,
+        }.get(self.workflow.stage)
+        if (
+            self.pending_decision is not None
+            and self.pending_decision.kind is not expected_decision
+        ):
+            raise ValueError("pending decision does not match the current workflow stage")
         item_ids = tuple(item.id for item in self.epistemic_items)
         if len(item_ids) != len(set(item_ids)):
             raise ValueError("epistemic item identifiers must be unique within a record")

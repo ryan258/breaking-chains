@@ -164,6 +164,8 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Description:** Persist paused and completed investigations as readable Markdown with a versioned metadata block and atomic writes.
 
+Active working records are also canonical from Task 7 onward so every completed stage and pending decision can be resumed without repeating work.
+
 **Acceptance criteria:**
 
 - [x] A domain investigation round-trips through Markdown without losing epistemic items, relationships, decisions, or workflow history.
