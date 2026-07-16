@@ -5,6 +5,7 @@ description = "A first-principles discovery forge for traceable investigations."
 requires-python = ">=3.12"
 dependencies = [
     "httpx",
+    "jsonschema",
     "pydantic",
     "pydantic-settings",
     "rich",

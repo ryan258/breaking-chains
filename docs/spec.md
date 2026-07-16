@@ -284,6 +284,12 @@ Each completed or paused investigation has a Markdown file under `outputs/invest
 
 The index must be rebuildable from Markdown records. Rebuilding may omit transient UI state but must preserve completed intellectual content and cross-investigation links.
 
+### Local execution trace
+
+`logs/forge.jsonl` records compact structured events for each model-call start, attempt, retry, cancellation, failure, and success. Events include investigation ID, call ID, role, model, timing, attempts, sanitized failure class, usage/cost, prompt-contract version, and the related artifact path. Prompt and response bodies never appear in this operational log.
+
+`outputs/model-calls/<investigation-id>/<call-id>.json` stores the complete sanitized provider request and response for local inspection. Credentials are stripped, paths are constrained beneath the configured output root, and trace directories/files use private owner-only permissions. `outputs/smoke/openrouter-smoke.md` is the human-readable result of an explicitly invoked live gateway check.
+
 ## Model and Provider Boundary
 
 Define an application-owned `ModelGateway` interface with structured request and response models. The OpenRouter implementation is the only version-one provider implementation, but orchestration code depends only on the interface.
@@ -323,6 +329,8 @@ tests/
   contract/                    Role-output and gateway contract tests
   e2e/                         Scripted CLI and Streamlit smoke tests
 data/                          Runtime data; ignored except documented examples
+logs/                          Metadata-only JSONL event trace; ignored
+outputs/                       Markdown records and sanitized call artifacts; ignored
 ```
 
 ## Code Style

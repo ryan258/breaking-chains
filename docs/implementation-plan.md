@@ -214,19 +214,20 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 ### Task 6: Define the model gateway and validate OpenRouter transport
 
-**Description:** Create provider-independent request/result contracts and an OpenRouter implementation with timeouts, bounded transient retries, structured-output parsing, usage capture, and secret-safe failures.
+**Description:** Create provider-independent request/result contracts and an OpenRouter implementation with timeouts, bounded transient retries, structured-output parsing, usage capture, secret-safe failures, metadata-only JSONL events, and complete sanitized local call artifacts.
 
 **Acceptance criteria:**
 
-- [ ] Orchestration-facing models contain no OpenRouter-specific response shapes.
-- [ ] Success, malformed output, timeout, rate limit, cancellation, and provider error fixtures map to explicit application results.
-- [ ] Recorded receipts include role, model, timing, usage/cost when available, and prompt-contract version without secrets.
+- [x] Orchestration-facing models contain no OpenRouter-specific response shapes.
+- [x] Success, malformed output, timeout, rate limit, cancellation, and provider error fixtures map to explicit application results.
+- [x] Recorded receipts include role, model, timing, usage/cost when available, and prompt-contract version without secrets.
+- [x] Logs contain metadata and artifact pointers only; full sanitized request/response bodies remain in private ignored output files.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/contract/test_model_gateway.py tests/contract/test_openrouter.py`
-- [ ] `uv run ruff check src/forge/gateways tests/contract`
-- [ ] Optional manual check: run the explicitly marked live smoke test with a low-cost configured model.
+- [x] `uv run pytest tests/contract/test_model_gateway.py tests/contract/test_openrouter.py`
+- [x] `uv run ruff check src/forge/gateways tests/contract`
+- [x] Manual check: `uv run python scripts/smoke_openrouter.py` succeeded with a configured free model and wrote Markdown, JSON artifact, and JSONL events.
 
 **Dependencies:** Tasks 1B and 3. Model-call receipts remain persistence-neutral until orchestration integrates them.
 
@@ -234,6 +235,9 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 - `src/forge/gateways/model.py`
 - `src/forge/gateways/openrouter.py`
+- `src/forge/observability/trace.py`
+- `src/forge/smoke_report.py`
+- `scripts/smoke_openrouter.py`
 - `tests/contract/test_model_gateway.py`
 - `tests/contract/test_openrouter.py`
 
