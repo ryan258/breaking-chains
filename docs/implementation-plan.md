@@ -131,14 +131,14 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Acceptance criteria:**
 
-- [ ] Illegal transitions fail without mutating state; legal transitions preserve a timestamped history.
-- [ ] Every decision type—mode, consent, checkpoint, pause/resume, and recovery—uses A-E with E reserved for custom input.
-- [ ] Letter normalization accepts lowercase and whitespace while invalid input preserves the active question.
+- [x] Illegal transitions fail without mutating state; legal transitions preserve a timestamped history.
+- [x] Every decision type—mode, consent, checkpoint, pause/resume, and recovery—uses A-E with E reserved for custom input.
+- [x] Letter normalization accepts lowercase and whitespace while invalid input preserves the active question.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/unit/test_investigation.py tests/unit/test_decisions.py`
-- [ ] `uv run ruff check src/forge/domain src/forge/application tests/unit`
+- [x] `uv run pytest tests/unit/test_investigation.py tests/unit/test_decisions.py`
+- [x] `uv run ruff check src/forge/domain src/forge/application tests/unit`
 
 **Dependencies:** Task 2.
 
@@ -153,9 +153,9 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 ## Checkpoint 1: Domain foundation
 
-- [ ] `uv run pytest tests/unit`
-- [ ] `uv run ruff check .`
-- [ ] `uv run ruff format --check .`
+- [x] `uv run pytest tests/unit`
+- [x] `uv run ruff check .`
+- [x] `uv run ruff format --check .`
 - [ ] Review a serialized fixture and confirm premises, evidence, claims, and hypotheses remain visibly distinct.
 
 ## Phase 2: Durable and Resumable Records
