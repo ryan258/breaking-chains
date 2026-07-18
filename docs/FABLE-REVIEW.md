@@ -2,6 +2,8 @@
 
 Reviewed 2026-07-17 at commit `b72ed22`. Scope: all of `src/`, `scripts/`, `tests/`, config, and build metadata. Baseline: 117 tests pass, `ruff check` clean.
 
+> **Status update, 2026-07-17 (later the same day):** Findings 1 (defer/resume bug), 2 (unit-of-work rollback), and 4 (dead statement index) are fixed; the simplifications in finding 5 for shared text types and derived environment names are done; enhancement 1 (CLI entry point, `uv run forge`) is built with e2e tests. Findings 3 (budget enforcement — deliberately deferred until real specialists are wired in) and the remaining items (CI, README, smoke-script helper, lock busy-wait, prompt copy) are still open.
+
 ## Verdict
 
 This is an unusually disciplined codebase for its age: frozen validated models everywhere, atomic writes with fsync, secret redaction, monotonic clock guards, restart-safe orchestration, and a rebuildable projection. The foundations are trustworthy. The findings below are one confirmed behavioral bug, a handful of design corrections worth making before the CLI/UI phases build on top of them, and some simplifications where the code carries more weight than the problem requires.
