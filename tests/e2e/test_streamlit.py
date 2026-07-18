@@ -99,6 +99,29 @@ def test_paused_investigation_can_continue_locally_without_model_calls(
     assert at.button(key="decision_A").label == "A — Accept action"
 
 
+def test_saved_records_filter_matches_seed_and_hides_misses(
+    streamlit_environment: Path,
+) -> None:
+    at = app_test().run()
+    at.text_area(key="seed").input("Why does the kettle whistle?")
+    at.button(key="prepare_start").click().run()
+    at.button(key="decision_A").click().run()
+    at.button(key="decision_D").click().run()
+    for _ in range(3):
+        at.button(key="decision_A").click().run()
+    at.button(key="return_home").click().run()
+
+    at.text_input(key="record_filter").input("zebra-parade").run()
+    assert not any(box.key == "saved_record" for box in at.selectbox)
+
+    at.text_input(key="record_filter").input("kettle").run()
+    assert any(
+        option.startswith("Why does the kettle whistle?")
+        for option in at.selectbox(key="saved_record").options
+    )
+    assert not at.exception
+
+
 def test_custom_answer_field_is_hidden_until_e_is_selected(
     streamlit_environment: Path,
 ) -> None:

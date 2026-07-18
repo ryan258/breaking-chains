@@ -1,6 +1,7 @@
 """Typer command adapter over the shared application core."""
 
 import asyncio
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -20,12 +21,17 @@ from forge.application.decisions import (
     submit_decision,
 )
 from forge.application.orchestrator import InvestigationOrchestrator, OrchestrationView
-from forge.application.runtime import budget_policy, orchestrator_context, repository
+from forge.application.runtime import (
+    budget_policy,
+    filter_records,
+    orchestrator_context,
+    projection,
+    repository,
+)
 from forge.application.source_ingestion import SourceImportError, import_local_source
 from forge.config import ConfigurationError, ForgeSettings, load_settings
 from forge.domain.investigation import DepthMode, WorkflowStatus
 from forge.persistence.markdown import RecordFormatError, render_record
-from forge.persistence.sqlite import SQLiteProjection
 
 app = typer.Typer(add_completion=False, help="First-principles discovery forge.")
 
@@ -261,6 +267,38 @@ def list_investigations(
 
 
 @app.command()
+def search(
+    query: str,
+    category: Annotated[str | None, typer.Option("--category")] = None,
+) -> None:
+    """Find saved investigations by seed, focus, or indexed statement text."""
+
+    settings = _settings()
+    if not query.strip():
+        typer.echo("Enter a search phrase.")
+        raise typer.Exit(2)
+    records = filter_records(settings, repository(settings).list_records(), query)
+    for record in records:
+        workflow = record.workflow
+        typer.echo(
+            f"{record.id}  {workflow.depth.value}  {workflow.stage.value}  "
+            f"{workflow.status.value}  {record.seed[:60]}"
+        )
+    try:
+        hits = projection(settings).search(query.strip(), category=category)
+    except ValueError as error:
+        typer.echo(str(error))
+        raise typer.Exit(2) from None
+    except sqlite3.OperationalError:
+        hits = ()
+    for hit in hits:
+        subtype = f"/{hit.subtype}" if hit.subtype else ""
+        typer.echo(f"{hit.investigation_id}  {hit.category}{subtype}  {hit.statement[:70]}")
+    if not records and not hits:
+        typer.echo("No matches. If indexed content seems missing, run: forge rebuild-index")
+
+
+@app.command()
 def show(investigation_id: str) -> None:
     """Render a saved investigation's report in the terminal."""
 
@@ -281,7 +319,7 @@ def rebuild_index() -> None:
 
     settings = _settings()
     records = repository(settings).list_records()
-    SQLiteProjection(settings.data_dir / "forge.sqlite3").rebuild(records)
+    projection(settings).rebuild(records)
     typer.echo(f"Rebuilt the SQLite index from {len(records)} canonical record(s).")
 
 

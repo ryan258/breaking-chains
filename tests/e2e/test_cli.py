@@ -54,6 +54,29 @@ def test_quick_investigation_completes_with_single_letter_choices(
     assert "completed" in listed.output
 
 
+def test_search_finds_records_by_seed_and_indexed_content(cli_environment: Path) -> None:
+    started = runner.invoke(
+        app,
+        ["investigate", "--seed", "Why does the kettle whistle?", "--mode", "quick"],
+        input="D\na\nA\n A \n",
+    )
+    assert started.exit_code == 0, started.output
+    match = re.search(r"inv_[a-z0-9]+", started.output)
+    assert match is not None
+
+    by_seed = runner.invoke(app, ["search", "kettle"])
+    assert by_seed.exit_code == 0, by_seed.output
+    assert match.group() in by_seed.output
+
+    by_content = runner.invoke(app, ["search", "constraint"])
+    assert by_content.exit_code == 0, by_content.output
+    assert match.group() in by_content.output
+
+    nothing = runner.invoke(app, ["search", "zebra-parade"])
+    assert nothing.exit_code == 0, nothing.output
+    assert "No matches" in nothing.output
+
+
 def test_show_renders_findings_for_a_saved_record(cli_environment: Path) -> None:
     started = runner.invoke(
         app,

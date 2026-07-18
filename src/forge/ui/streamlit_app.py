@@ -15,7 +15,7 @@ from forge.application.decisions import (
     pause_resume_prompt,
     submit_decision,
 )
-from forge.application.runtime import budget_policy, repository
+from forge.application.runtime import budget_policy, filter_records, repository
 from forge.application.source_ingestion import SourceImportError
 from forge.config import ConfigurationError, ForgeSettings, load_settings
 from forge.domain.investigation import DepthMode, WorkflowStage, WorkflowStatus
@@ -188,6 +188,16 @@ def _render_saved_records(settings: ForgeSettings) -> None:
     if not records:
         st.caption("No saved investigations yet.")
         return
+    query = st.text_input(
+        "Filter saved investigations",
+        key="record_filter",
+        help="Matches seed text, recorded focus, and indexed statement content.",
+    )
+    if query.strip():
+        records = filter_records(settings, records, query)
+        if not records:
+            st.caption("No saved investigations match this filter.")
+            return
     labels = {f"{record.seed} — {record.id}": record for record in records}
     selected_label = st.selectbox("Saved record", labels, key="saved_record")
     if st.button("Resume selected investigation", key="resume_saved"):

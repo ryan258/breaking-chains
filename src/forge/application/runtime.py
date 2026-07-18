@@ -1,5 +1,6 @@
 """Shared local runtime assembly for the CLI and Streamlit adapters."""
 
+import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from forge.gateways.model import ModelRole
 from forge.gateways.openrouter import OpenRouterGateway
 from forge.observability.trace import TraceWriter
 from forge.persistence.markdown import MarkdownInvestigationRepository
+from forge.persistence.metadata import InvestigationRecord
 from forge.persistence.sqlite import SQLiteProjection
 from forge.persistence.unit_of_work import InvestigationUnitOfWork
 
@@ -21,6 +23,39 @@ def repository(settings: ForgeSettings) -> MarkdownInvestigationRepository:
     """Return the canonical record repository used by every local adapter."""
 
     return MarkdownInvestigationRepository(settings.output_dir / "investigations")
+
+
+def projection(settings: ForgeSettings) -> SQLiteProjection:
+    """Return the disposable search projection used by every local adapter."""
+
+    return SQLiteProjection(settings.data_dir / "forge.sqlite3")
+
+
+def filter_records(
+    settings: ForgeSettings,
+    records: tuple[InvestigationRecord, ...],
+    query: str,
+) -> tuple[InvestigationRecord, ...]:
+    """Match canonical records by seed, focus, or indexed statement text."""
+
+    needle = query.strip().casefold()
+    if not needle:
+        return records
+    try:
+        content_matches = {
+            hit.investigation_id for hit in projection(settings).search(query.strip())
+        }
+    except (ValueError, sqlite3.OperationalError):
+        # A stale or missing projection only narrows content search; the
+        # canonical seed and focus matches below still apply.
+        content_matches = set()
+    return tuple(
+        record
+        for record in records
+        if record.id in content_matches
+        or needle in record.seed.casefold()
+        or needle in (record.selected_focus or "").casefold()
+    )
 
 
 def budget_policy(settings: ForgeSettings) -> BudgetPolicy:
@@ -54,10 +89,7 @@ def _models(settings: ForgeSettings) -> dict[ModelRole, str]:
 
 
 def _orchestrator(settings: ForgeSettings, specialists) -> InvestigationOrchestrator:
-    unit_of_work = InvestigationUnitOfWork(
-        repository(settings),
-        SQLiteProjection(settings.data_dir / "forge.sqlite3"),
-    )
+    unit_of_work = InvestigationUnitOfWork(repository(settings), projection(settings))
     return InvestigationOrchestrator(
         store=unit_of_work,
         specialists=specialists,
@@ -95,4 +127,10 @@ async def orchestrator_context(
         yield _orchestrator(settings, specialists)
 
 
-__all__ = ["budget_policy", "orchestrator_context", "repository"]
+__all__ = [
+    "budget_policy",
+    "filter_records",
+    "orchestrator_context",
+    "projection",
+    "repository",
+]
