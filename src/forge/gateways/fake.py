@@ -78,6 +78,17 @@ class DeterministicSpecialistRunner:
                 )
             )
         if role is ModelRole.SYNTHESIZER:
+            connection = next(
+                (
+                    item
+                    for item in reversed(record.epistemic_items)
+                    if isinstance(item, ExploratoryItem)
+                    and item.exploratory_type is ExploratoryType.CONNECTION
+                ),
+                None,
+            )
+            if connection is None:
+                raise ValueError("deterministic synthesis requires a saved connection")
             return SpecialistContribution(
                 epistemic_items=(
                     ExploratoryItem(
@@ -88,15 +99,26 @@ class DeterministicSpecialistRunner:
                         uncertainty=confidence,
                         provenance=Provenance(origin="Deterministic Synthesizer"),
                         exploratory_type=ExploratoryType.HYPOTHESIS,
-                        based_on=("epi_constraint_connection",),
+                        based_on=(connection.id,),
                     ),
                 )
             )
         if role is ModelRole.SKEPTIC:
+            hypothesis = next(
+                (
+                    item
+                    for item in reversed(record.epistemic_items)
+                    if isinstance(item, ExploratoryItem)
+                    and item.exploratory_type is ExploratoryType.HYPOTHESIS
+                ),
+                None,
+            )
+            if hypothesis is None:
+                raise ValueError("deterministic skepticism requires a saved hypothesis")
             return SpecialistContribution(
                 skeptical_challenges=(
                     SkepticalChallenge(
-                        target_id="epi_constraint_hypothesis",
+                        target_id=hypothesis.id,
                         challenge=(
                             "The proposed analogy may preserve language but not causal structure."
                         ),

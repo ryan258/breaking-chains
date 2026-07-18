@@ -1,6 +1,7 @@
 """Structured contract for traceable, non-evidentiary connection proposals."""
 
 import json
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -9,10 +10,18 @@ from forge.application.source_ingestion import (
     source_messages_for_record,
 )
 from forge.domain.epistemics import ExploratoryItem, ExploratoryType
+from forge.domain.identifiers import EpistemicItemId
 from forge.gateways.model import ModelMessage, ModelRequest, ModelRole
 from forge.persistence.metadata import InvestigationRecord
 
 CONNECTION_PROMPT_VERSION = "connection-finder-v1"
+
+
+class ConnectionProposal(ExploratoryItem):
+    """Provider-facing connection shape with traceability encoded in JSON Schema."""
+
+    exploratory_type: Literal[ExploratoryType.CONNECTION] = ExploratoryType.CONNECTION
+    based_on: tuple[EpistemicItemId, ...] = Field(min_length=1)
 
 
 class ConnectionRoleOutput(BaseModel):
@@ -20,7 +29,7 @@ class ConnectionRoleOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    connections: tuple[ExploratoryItem, ...] = Field(min_length=1)
+    connections: tuple[ConnectionProposal, ...] = Field(min_length=1)
 
     @model_validator(mode="after")
     def require_connections_with_basis(self) -> "ConnectionRoleOutput":

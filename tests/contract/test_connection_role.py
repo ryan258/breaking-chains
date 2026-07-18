@@ -77,3 +77,17 @@ def test_connection_request_is_versioned() -> None:
     assert request.role is ModelRole.CONNECTION_FINDER
     assert request.prompt_contract_version == CONNECTION_PROMPT_VERSION
     assert "analogy is not evidence" in request.messages[0].content.lower()
+
+
+def test_connection_request_schema_requires_traceable_connection_fields() -> None:
+    request = build_connection_request(
+        record(),
+        model="vendor/connection-model",
+        call_id="call_connection_schema",
+        max_output_tokens=1200,
+    )
+
+    proposal = request.output_schema["$defs"]["ConnectionProposal"]
+
+    assert proposal["properties"]["exploratory_type"]["const"] == "connection"
+    assert proposal["properties"]["based_on"]["minItems"] == 1

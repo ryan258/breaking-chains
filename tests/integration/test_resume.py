@@ -98,6 +98,66 @@ async def test_pause_restart_and_resume_preserve_prompt_without_repeating_resear
     assert restarted_runner.calls == []
 
 
+@pytest.mark.asyncio
+async def test_local_continuation_uses_the_saved_live_connection_as_its_basis(
+    tmp_path: Path,
+) -> None:
+    uow = unit_of_work(tmp_path)
+    crashing_store = CrashAfterStageStore(uow, WorkflowStage.CONNECTIONS_GENERATED)
+    initial = InvestigationOrchestrator(
+        store=crashing_store,
+        specialists=DeterministicSpecialistRunner(),
+        clock=TickingClock(),
+        lock_root=tmp_path / "locks",
+    )
+    focus = await initial.start(
+        investigation_id="inv_local_continuation",
+        seed="Can saved live work continue locally?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 22, 0, tzinfo=UTC),
+    )
+    evidence = await choose_a(initial, focus)
+
+    with pytest.raises(RuntimeError, match="simulated process stop"):
+        await choose_a(initial, evidence)
+
+    persisted = uow.load(focus.record.id)
+    renamed_items = tuple(
+        item.model_copy(update={"id": "epi_live_connection"})
+        if item.id == "epi_constraint_connection"
+        else item
+        for item in persisted.epistemic_items
+    )
+    uow.save(persisted.model_copy(update={"epistemic_items": renamed_items}))
+    pausing = InvestigationOrchestrator(
+        store=CrashAfterStageStore(uow),
+        specialists=DeterministicSpecialistRunner(),
+        clock=TickingClock(),
+        lock_root=tmp_path / "locks",
+    )
+    await pausing.pause(persisted.id)
+
+    local_runner = DeterministicSpecialistRunner()
+    continuing = InvestigationOrchestrator(
+        store=CrashAfterStageStore(uow),
+        specialists=local_runner,
+        clock=TickingClock(),
+        lock_root=tmp_path / "locks",
+    )
+    resumed = await continuing.resume(persisted.id)
+
+    assert resumed.record.workflow.stage is WorkflowStage.ACTION_CHECKPOINT
+    hypothesis = next(
+        item for item in resumed.record.epistemic_items if item.id == "epi_constraint_hypothesis"
+    )
+    assert hypothesis.based_on == ("epi_live_connection",)
+    assert local_runner.calls == [
+        ModelRole.SYNTHESIZER,
+        ModelRole.SKEPTIC,
+        ModelRole.EXPERIMENT_DESIGNER,
+    ]
+
+
 @pytest.mark.parametrize("defer_letter", ["B", "D"])
 @pytest.mark.asyncio
 async def test_deferred_action_is_reasked_after_resume_instead_of_completing(
