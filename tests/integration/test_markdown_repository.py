@@ -278,8 +278,6 @@ def test_all_repository_operations_reject_symbolic_link_records(tmp_path: Path) 
         repository.exists("inv_linked_record")
     with pytest.raises(RecordFormatError, match="symbolic link"):
         repository.list_records()
-    with pytest.raises(RecordFormatError, match="symbolic link"):
-        repository.delete("inv_linked_record")
 
     assert linked_record.is_symlink()
     assert fixture.exists()

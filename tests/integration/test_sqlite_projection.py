@@ -90,7 +90,7 @@ def test_reindexing_one_record_replaces_stale_items_and_relationships(tmp_path: 
     assert projection.relationships(record.id) == ()
 
 
-def test_unit_of_work_updates_both_stores_or_restores_previous_record(
+def test_unit_of_work_keeps_canonical_record_and_rebuilds_failed_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -106,14 +106,13 @@ def test_unit_of_work_updates_both_stores_or_restores_previous_record(
 
     monkeypatch.setattr(projection, "save", fail_projection_save)
 
-    with pytest.raises(RuntimeError, match="simulated projection failure"):
-        unit_of_work.save(changed)
+    unit_of_work.save(changed)
 
-    assert markdown.load(original.id) == original
-    assert SQLiteProjection(tmp_path / "forge.sqlite3").load_record(original.id) == original
+    assert markdown.load(original.id) == changed
+    assert SQLiteProjection(tmp_path / "forge.sqlite3").load_record(original.id) == changed
 
 
-def test_unit_of_work_removes_new_markdown_when_initial_projection_fails(
+def test_unit_of_work_keeps_new_canonical_record_when_projection_cannot_recover(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -122,15 +121,16 @@ def test_unit_of_work_removes_new_markdown_when_initial_projection_fails(
     unit_of_work = InvestigationUnitOfWork(markdown, projection)
     record = fixture_record()
 
-    def fail_projection_save(record: object) -> None:
+    def fail_projection(*args: object) -> None:
         raise RuntimeError("simulated projection failure")
 
-    monkeypatch.setattr(projection, "save", fail_projection_save)
+    monkeypatch.setattr(projection, "save", fail_projection)
+    monkeypatch.setattr(projection, "rebuild", fail_projection)
 
     with pytest.raises(RuntimeError, match="simulated projection failure"):
         unit_of_work.save(record)
 
-    assert not (tmp_path / "investigations" / f"{record.id}.md").exists()
+    assert markdown.load(record.id) == record
 
 
 def test_version_one_projection_migrates_relationship_targets(tmp_path: Path) -> None:

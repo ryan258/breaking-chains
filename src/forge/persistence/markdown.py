@@ -90,15 +90,6 @@ class MarkdownInvestigationRepository:
         _reject_symbolic_link(target)
         return target.is_file()
 
-    def delete(self, investigation_id: str) -> None:
-        """Remove a canonical record during coordinated rollback."""
-
-        target = self._target(investigation_id)
-        _reject_symbolic_link(target)
-        target.unlink(missing_ok=True)
-        if self.root.exists():
-            _sync_directory(self.root)
-
     def list_records(self) -> tuple[InvestigationRecord, ...]:
         """Load every canonical record in deterministic identifier order."""
 

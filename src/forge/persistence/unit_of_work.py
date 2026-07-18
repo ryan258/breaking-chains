@@ -5,12 +5,8 @@ from forge.persistence.metadata import InvestigationRecord
 from forge.persistence.sqlite import SQLiteProjection
 
 
-class PersistenceConsistencyError(RuntimeError):
-    """A failed projection could not be compensated in canonical storage."""
-
-
 class InvestigationUnitOfWork:
-    """Keep canonical Markdown and its disposable projection aligned."""
+    """Canonical Markdown always wins; the projection is a rebuildable index."""
 
     def __init__(
         self,
@@ -21,23 +17,15 @@ class InvestigationUnitOfWork:
         self.projection = projection
 
     def save(self, record: InvestigationRecord) -> None:
-        """Save both stores or restore the prior canonical record."""
+        """Persist canonical Markdown, then refresh the disposable projection."""
 
-        previous = self.markdown.load(record.id) if self.markdown.exists(record.id) else None
         self.markdown.save(record)
         try:
             self.projection.save(record)
         except Exception:
-            try:
-                if previous is None:
-                    self.markdown.delete(record.id)
-                else:
-                    self.markdown.save(previous)
-            except Exception as rollback_error:
-                raise PersistenceConsistencyError(
-                    "projection save failed and canonical rollback also failed"
-                ) from rollback_error
-            raise
+            # The projection is derived data: never sacrifice the canonical
+            # record to keep it in lockstep. Restore it from Markdown instead.
+            self.projection.rebuild(self.markdown.list_records())
 
     def load(self, investigation_id: str) -> InvestigationRecord:
         """Load canonical working state for orchestration or resumption."""
@@ -50,4 +38,4 @@ class InvestigationUnitOfWork:
         return self.markdown.exists(investigation_id)
 
 
-__all__ = ["InvestigationUnitOfWork", "PersistenceConsistencyError"]
+__all__ = ["InvestigationUnitOfWork"]

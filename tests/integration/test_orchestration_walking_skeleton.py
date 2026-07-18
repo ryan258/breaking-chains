@@ -154,7 +154,7 @@ async def test_start_is_idempotent_for_an_existing_working_record(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_projection_failure_restores_pending_checkpoint_before_any_role_runs(
+async def test_projection_failure_never_blocks_canonical_progress(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -171,12 +171,13 @@ async def test_projection_failure_restores_pending_checkpoint_before_any_role_ru
 
     monkeypatch.setattr(projection, "save", fail_projection_save)
 
-    with pytest.raises(RuntimeError, match="simulated projection failure"):
-        await choose_a(orchestrator, focus)
+    evidence = await choose_a(orchestrator, focus)
 
-    assert markdown.load(focus.record.id) == focus.record
-    assert store.load(focus.record.id).pending_decision == focus.prompt
-    assert runner.calls == []
+    assert evidence.record.workflow.stage is WorkflowStage.EVIDENCE_CHECKPOINT
+    assert runner.calls == [ModelRole.RESEARCHER]
+    assert markdown.load(focus.record.id) == evidence.record
+    rebuilt = SQLiteProjection(tmp_path / "data" / "forge.sqlite3")
+    assert rebuilt.load_record(focus.record.id) == evidence.record
 
 
 @pytest.mark.asyncio
