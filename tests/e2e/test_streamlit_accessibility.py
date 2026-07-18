@@ -167,9 +167,9 @@ def test_ae_controls_activate_with_enter_and_space_and_expose_text_status(
     focus.focus()
     second_page.keyboard.press("Enter")
 
-    expect(second_page.get_by_text("Stage:")).to_be_visible()
-    expect(second_page.get_by_text("Status:")).to_be_visible()
-    expect(second_page.get_by_text("Mode:")).to_be_visible()
+    expect(second_page.locator("strong").filter(has_text="Stage:")).to_be_visible()
+    expect(second_page.locator("strong").filter(has_text="Status:")).to_be_visible()
+    expect(second_page.locator("strong").filter(has_text="Mode:")).to_be_visible()
     expect(second_page.get_by_text("Confidence:").first).to_be_attached()
 
 
