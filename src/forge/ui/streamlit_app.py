@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from forge.application.budgets import live_run_confirmation_prompt
 from forge.application.decisions import (
@@ -34,6 +35,39 @@ from forge.ui.view_models import completed_stage_labels, review_sections
 
 st.set_page_config(page_title="First-Principles Forge", page_icon="⚒", layout="wide")
 st.html(Path(__file__).parent / "assets/style.css")
+
+# One keypress answers the visible A-E question: minimal-motion input for
+# hands that find aim-and-click costly. Typing fields keep every letter.
+_HOTKEY_SCRIPT = """
+<script>
+(function () {
+    const doc = window.parent.document;
+    if (doc.__forgeHotkeys) { return; }
+    doc.__forgeHotkeys = true;
+    doc.addEventListener("keydown", function (event) {
+        if (event.metaKey || event.ctrlKey || event.altKey) { return; }
+        if (event.key.length !== 1) { return; }
+        const key = event.key.toUpperCase();
+        if (key < "A" || key > "E") { return; }
+        const active = doc.activeElement;
+        if (
+            active
+            && (active.tagName === "INPUT"
+                || active.tagName === "TEXTAREA"
+                || active.isContentEditable)
+        ) { return; }
+        const prefix = key + " \\u2014";
+        const target = Array.from(doc.querySelectorAll("button")).find(
+            (button) => button.innerText.trim().startsWith(prefix)
+        );
+        if (target) {
+            event.preventDefault();
+            target.click();
+        }
+    });
+})();
+</script>
+"""
 
 
 def _settings() -> ForgeSettings:
@@ -388,8 +422,12 @@ def _render_record(settings: ForgeSettings, record: InvestigationRecord) -> None
 
 def main() -> None:
     settings = _settings()
+    components.html(_HOTKEY_SCRIPT, height=0)
     st.title("First-Principles Forge")
-    st.caption("A local, traceable workspace for questions that deserve careful reasoning.")
+    st.caption(
+        "A local, traceable workspace for questions that deserve careful reasoning. "
+        "Answer any visible A-E question by pressing that letter key."
+    )
     if notice := st.session_state.pop("notice", None):
         st.info(notice)
 

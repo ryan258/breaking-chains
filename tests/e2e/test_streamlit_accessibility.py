@@ -173,6 +173,37 @@ def test_ae_controls_activate_with_enter_and_space_and_expose_text_status(
     expect(second_page.get_by_text("Confidence:").first).to_be_attached()
 
 
+def test_ae_keys_answer_the_visible_question_without_stealing_typed_text(
+    page: Page,
+    streamlit_url: str,
+) -> None:
+    page.goto(streamlit_url)
+    page.get_by_role("textbox", name="Investigation seed").fill(
+        "Drive the whole run from the keyboard."
+    )
+    page.get_by_role("button", name="Prepare investigation").click()
+    expect(page.get_by_role("button", name="A — Quick")).to_be_visible()
+
+    page.keyboard.press("a")
+    expect(page.get_by_role("button", name="D — Use deterministic preview")).to_be_visible()
+    page.keyboard.press("d")
+    expect(page.get_by_role("button", name="A — Trace constraints")).to_be_visible()
+
+    page.keyboard.press("e")
+    custom_box = page.get_by_label("Custom answer")
+    expect(custom_box).to_be_visible()
+    custom_box.click()
+    custom_box.type("abcde stays typed text")
+    expect(custom_box).to_have_value("abcde stays typed text")
+
+    page.get_by_role("button", name="Submit custom answer").click()
+    expect(page.get_by_role("button", name="A — Accept")).to_be_visible()
+    page.keyboard.press("a")
+    expect(page.get_by_role("button", name="A — Accept action")).to_be_visible()
+    page.keyboard.press("a")
+    expect(page.locator("strong").filter(has_text="Stage:")).to_be_visible()
+
+
 def test_validation_failure_is_explained_in_text(page: Page, streamlit_url: str) -> None:
     page.goto(streamlit_url)
     page.get_by_role("button", name="Prepare investigation").click()
