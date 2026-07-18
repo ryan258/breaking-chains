@@ -1,6 +1,9 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from forge.application.decisions import ChoiceLetter, DecisionKind
 from forge.application.source_ingestion import import_local_source
 from forge.domain.investigation import DepthMode, InvestigationWorkflow
@@ -40,6 +43,24 @@ def test_lead_output_becomes_one_valid_ae_focus_decision() -> None:
     assert prompt.options[2].is_recommended is True
     assert prompt.options[4].accepts_custom_input is True
     assert prompt.options[4].label == "Custom answer"
+
+
+@pytest.mark.parametrize("junk_label", ["A", "b", "Option C", "(D)", "e."])
+def test_lead_output_with_bare_letter_labels_is_rejected(junk_label: str) -> None:
+    with pytest.raises(ValidationError, match="descriptive phrases"):
+        parse_lead_output(
+            {
+                "question": "Which constraint should anchor the investigation?",
+                "options": [
+                    {"label": junk_label, "description": "A placeholder the model returned."},
+                    {"label": "Time", "description": "Examine timing as the binding limit."},
+                    {"label": "Information", "description": "Test information bottlenecks."},
+                    {"label": "Materials", "description": "Inspect physical resource limits."},
+                ],
+                "recommended_index": 0,
+            },
+            investigation_id="inv_lead_contract",
+        )
 
 
 def test_lead_request_is_versioned_and_provider_neutral() -> None:
