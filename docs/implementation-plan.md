@@ -286,14 +286,14 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] A user can complete a deterministic Quick investigation using only seed text and single-letter decisions.
-- [ ] Invalid answers repeat the same decision without triggering another role call.
-- [ ] An interrupted terminal session resumes from the last persisted stage.
+- [x] A user can complete a deterministic Quick investigation using only seed text and single-letter decisions.
+- [x] Invalid answers repeat the same decision without triggering another role call.
+- [x] An interrupted terminal session resumes from the last persisted stage.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/e2e/test_cli.py`
-- [ ] Manual check: `uv run forge investigate --mode quick --seed "What follows from this observation?"`
+- [x] `uv run pytest tests/e2e/test_cli.py`
+- [x] Manual check: `uv run forge investigate --mode quick --seed "What follows from this observation?"`
 
 **Dependencies:** Task 7.
 
@@ -308,10 +308,10 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 ## Checkpoint 3: First runnable forge
 
-- [ ] `uv run forge config-check`
-- [ ] Complete, interrupt, and resume the fake-model CLI workflow.
-- [ ] Inspect both Markdown and SQLite outputs.
-- [ ] Confirm every decision can be made without free-form typing unless E is chosen.
+- [x] `uv run forge config-check`
+- [x] Complete, interrupt, and resume the fake-model CLI workflow.
+- [x] Inspect both Markdown and SQLite outputs.
+- [x] Confirm every decision can be made without free-form typing unless E is chosen.
 
 ## Phase 4: Production Specialist Contracts
 

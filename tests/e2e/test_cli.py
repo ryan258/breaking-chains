@@ -48,6 +48,21 @@ def test_quick_investigation_completes_with_single_letter_choices(
     assert "completed" in listed.output
 
 
+def test_invalid_choice_repeats_the_same_question_before_continuing(
+    cli_environment: Path,
+) -> None:
+    result = runner.invoke(
+        app,
+        ["investigate", "--seed", "What survives a bad input?", "--mode", "quick"],
+        input="not-a-choice\nA\nA\nA\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Choose A, B, C, D, or E." in result.output
+    assert result.output.count("Which focus should guide this investigation?") == 2
+    assert "completed (active)" in result.output
+
+
 def test_deferred_action_pauses_and_resume_reasks_the_question(
     cli_environment: Path,
 ) -> None:
