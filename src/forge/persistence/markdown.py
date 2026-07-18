@@ -8,9 +8,16 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from forge.domain.epistemics import DerivedClaim, EpistemicItem, Evidence, ExploratoryItem, Premise
+from forge.domain.epistemics import (
+    DerivedClaim,
+    EpistemicItem,
+    Evidence,
+    ExploratoryItem,
+    ExploratoryType,
+    Premise,
+)
 from forge.domain.identifiers import InvestigationId
-from forge.persistence.metadata import InvestigationRecord
+from forge.persistence.metadata import ChallengeDisposition, InvestigationRecord
 
 _METADATA_HEADER = "<!-- forge-record:begin v1 -->\n```json\n"
 _METADATA_FOOTER = "\n```\n<!-- forge-record:end -->\n"
@@ -110,6 +117,36 @@ class MarkdownInvestigationRepository:
         return self.root / f"{safe_id}.md"
 
 
+def key_findings(record: InvestigationRecord) -> tuple[str, ...]:
+    """Summarize what this investigation concluded, in plain unescaped text."""
+
+    hypotheses = [
+        item
+        for item in record.epistemic_items
+        if isinstance(item, ExploratoryItem)
+        and item.exploratory_type is ExploratoryType.HYPOTHESIS
+    ]
+    lines: list[str] = []
+    if record.selected_focus:
+        lines.append(f"Focus: {record.selected_focus}")
+    lines.extend(
+        f"Hypothesis ({item.uncertainty.level.value} confidence): {item.statement}"
+        for item in hypotheses[-3:]
+    )
+    objections = [
+        challenge
+        for challenge in record.skeptical_challenges
+        if challenge.disposition is ChallengeDisposition.REJECT
+    ]
+    if objections:
+        lines.append(f"Standing objection: {objections[-1].challenge}")
+    if record.selected_action is not None:
+        lines.append(f"Proposed action: {record.selected_action.statement}")
+    if record.unresolved_questions:
+        lines.append(f"Open questions: {len(record.unresolved_questions)} recorded below.")
+    return tuple(lines)
+
+
 def render_record(record: InvestigationRecord) -> str:
     """Render a readable report followed by the lossless versioned record."""
 
@@ -117,9 +154,16 @@ def render_record(record: InvestigationRecord) -> str:
     evidence = [item for item in record.epistemic_items if isinstance(item, Evidence)]
     claims = [item for item in record.epistemic_items if isinstance(item, DerivedClaim)]
     exploratory = [item for item in record.epistemic_items if isinstance(item, ExploratoryItem)]
+    findings = [f"- {_markdown_text(line)}" for line in key_findings(record)] or [
+        "- Nothing to summarize yet; the investigation has not reached synthesis."
+    ]
 
     lines = [
         f"# Investigation: {_markdown_text(record.seed)}",
+        "",
+        "## Findings",
+        "",
+        *findings,
         "",
         "## Overview",
         "",
@@ -350,6 +394,7 @@ def _reject_symbolic_link(path: Path) -> None:
 __all__ = [
     "MarkdownInvestigationRepository",
     "RecordFormatError",
+    "key_findings",
     "parse_record",
     "render_record",
 ]

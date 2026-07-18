@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from forge.domain.epistemics import DerivedClaim, Evidence, ExploratoryItem, Premise
 from forge.domain.investigation import WorkflowStage
+from forge.persistence.markdown import key_findings
 from forge.persistence.metadata import InvestigationRecord
 
 _STAGES = (
@@ -62,6 +63,7 @@ def review_sections(record: InvestigationRecord) -> tuple[ReviewSection, ...]:
     )
     action = (record.selected_action.statement,) if record.selected_action is not None else ()
     return (
+        ReviewSection("Findings", key_findings(record)),
         ReviewSection("Premises", premises),
         ReviewSection("Evidence", evidence),
         ReviewSection("Derived claims", claims),

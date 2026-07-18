@@ -54,6 +54,27 @@ def test_quick_investigation_completes_with_single_letter_choices(
     assert "completed" in listed.output
 
 
+def test_show_renders_findings_for_a_saved_record(cli_environment: Path) -> None:
+    started = runner.invoke(
+        app,
+        ["investigate", "--seed", "Why does the kettle whistle?", "--mode", "quick"],
+        input="D\na\nA\n A \n",
+    )
+    assert started.exit_code == 0, started.output
+    match = re.search(r"inv_[a-z0-9]+", started.output)
+    assert match is not None
+
+    shown = runner.invoke(app, ["show", match.group()])
+
+    assert shown.exit_code == 0, shown.output
+    assert "Findings" in shown.output
+    assert "Machine-readable record" not in shown.output
+
+    missing = runner.invoke(app, ["show", "inv_never_saved"])
+    assert missing.exit_code == 1
+    assert "No saved investigation" in missing.output
+
+
 def test_declining_live_confirmation_starts_nothing(cli_environment: Path) -> None:
     result = runner.invoke(
         app,

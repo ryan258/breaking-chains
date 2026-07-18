@@ -7,6 +7,8 @@ from typing import Annotated
 from uuid import uuid4
 
 import typer
+from rich.console import Console
+from rich.markdown import Markdown
 
 from forge.application.budgets import live_run_confirmation_prompt
 from forge.application.decisions import (
@@ -22,6 +24,7 @@ from forge.application.runtime import budget_policy, orchestrator_context, repos
 from forge.application.source_ingestion import SourceImportError, import_local_source
 from forge.config import ConfigurationError, ForgeSettings, load_settings
 from forge.domain.investigation import DepthMode, WorkflowStatus
+from forge.persistence.markdown import RecordFormatError, render_record
 from forge.persistence.sqlite import SQLiteProjection
 
 app = typer.Typer(add_completion=False, help="First-principles discovery forge.")
@@ -255,6 +258,21 @@ def list_investigations(
         )
     if shown == 0:
         typer.echo("No investigations found.")
+
+
+@app.command()
+def show(investigation_id: str) -> None:
+    """Render a saved investigation's report in the terminal."""
+
+    settings = _settings()
+    try:
+        record = repository(settings).load(investigation_id)
+    except (FileNotFoundError, RecordFormatError):
+        typer.echo(f"No saved investigation named {investigation_id}.")
+        raise typer.Exit(1) from None
+    text = render_record(record)
+    report = text[: text.index("## Machine-readable record")].rstrip()
+    Console().print(Markdown(report))
 
 
 @app.command("rebuild-index")

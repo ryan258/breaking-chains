@@ -234,6 +234,26 @@ def test_record_rejects_live_approval_without_recorded_a_decision() -> None:
         InvestigationRecord.model_validate(record.model_dump(mode="python"))
 
 
+def test_findings_summary_leads_the_rendered_report() -> None:
+    text = render_record(investigation_record())
+    human_section = text.split("<!-- forge-record:begin v1 -->", maxsplit=1)[0]
+
+    assert text.index("## Findings") < text.index("## Overview")
+    assert "Focus: Test whether measurement conditions explain the variation." in human_section
+    assert (
+        "Proposed action: Repeat the measurement at two controlled temperatures."
+        in human_section
+    )
+    assert "Open questions: 1 recorded below." in human_section
+
+    unsynthesized = InvestigationRecord(
+        id="inv_unsynthesized",
+        seed="Nothing has run yet.",
+        workflow=InvestigationWorkflow.start(depth=DepthMode.QUICK, at=STARTED),
+    )
+    assert "Nothing to summarize yet" in render_record(unsynthesized)
+
+
 def test_generated_markdown_is_readable_and_keeps_categories_visible(tmp_path: Path) -> None:
     repository = MarkdownInvestigationRepository(tmp_path)
 
