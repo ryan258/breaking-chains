@@ -98,6 +98,54 @@ async def test_pause_restart_and_resume_preserve_prompt_without_repeating_resear
     assert restarted_runner.calls == []
 
 
+@pytest.mark.parametrize("defer_letter", ["B", "D"])
+@pytest.mark.asyncio
+async def test_deferred_action_is_reasked_after_resume_instead_of_completing(
+    tmp_path: Path,
+    defer_letter: str,
+) -> None:
+    uow = unit_of_work(tmp_path)
+    runner = DeterministicSpecialistRunner()
+    orchestrator = InvestigationOrchestrator(
+        store=CrashAfterStageStore(uow),
+        specialists=runner,
+        clock=TickingClock(),
+        lock_root=tmp_path / "locks",
+    )
+    focus = await orchestrator.start(
+        investigation_id="inv_defer_action",
+        seed="Does deferring keep the question open?",
+        depth=DepthMode.QUICK,
+        at=datetime(2026, 7, 16, 22, 0, tzinfo=UTC),
+    )
+    evidence = await choose_a(orchestrator, focus)
+    action = await choose_a(orchestrator, evidence)
+
+    deferred = await orchestrator.submit_decision(
+        action.record.id,
+        prompt_id=action.prompt.id,
+        raw_choice=defer_letter,
+    )
+
+    assert deferred.record.workflow.status is WorkflowStatus.PAUSED
+    assert deferred.record.workflow.stage is WorkflowStage.ACTION_CHECKPOINT
+
+    calls_before_resume = list(runner.calls)
+    resumed = await orchestrator.resume(action.record.id)
+
+    assert resumed.record.workflow.status is WorkflowStatus.ACTIVE
+    assert resumed.record.workflow.stage is WorkflowStage.ACTION_CHECKPOINT
+    assert resumed.prompt == action.prompt
+    assert resumed.record.selected_action is not None
+    assert runner.calls == calls_before_resume
+
+    completed = await choose_a(orchestrator, resumed)
+
+    assert completed.record.workflow.stage is WorkflowStage.COMPLETED
+    assert completed.record.selected_action is not None
+    assert runner.calls == calls_before_resume
+
+
 @pytest.mark.parametrize(
     ("crash_stage", "completed_role"),
     [

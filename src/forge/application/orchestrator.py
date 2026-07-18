@@ -180,13 +180,19 @@ class InvestigationOrchestrator:
         }
         stage = record.workflow.stage
         letter = attempt.selection.letter
+        action_deferred = stage is WorkflowStage.ACTION_CHECKPOINT and letter in {
+            ChoiceLetter.B,
+            ChoiceLetter.D,
+        }
         should_pause = (
             stage is WorkflowStage.EVIDENCE_CHECKPOINT and letter is ChoiceLetter.D
-        ) or (
-            stage is WorkflowStage.ACTION_CHECKPOINT and letter in {ChoiceLetter.B, ChoiceLetter.D}
-        )
+        ) or action_deferred
         if should_pause:
             updates["workflow"] = record.workflow.pause(at=self._at(record))
+        if action_deferred:
+            # Deferring is not acceptance: keep the question open so resume
+            # re-asks it instead of falling through to COMPLETED.
+            updates["pending_decision"] = prompt
 
         if stage is WorkflowStage.FOCUS_CHECKPOINT:
             updates["selected_focus"] = attempt.custom_answer or attempt.selection.label
