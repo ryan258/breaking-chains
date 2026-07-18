@@ -1,6 +1,7 @@
 """Streamlit-facing calls into shared application services."""
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -16,13 +17,44 @@ from forge.application.runtime import orchestrator_context
 from forge.application.source_ingestion import SourceImportError, import_local_source
 from forge.config import ForgeSettings
 from forge.domain.investigation import DepthMode
+from forge.gateways.model import ModelReceipt
 from forge.persistence.metadata import InvestigationRecord, LocalSourceReference
+
+_MAX_QUARANTINE_ARTIFACT_BYTES = 1_000_000
 
 
 def run(awaitable) -> OrchestrationView:
     """Run one bounded application operation for a Streamlit interaction."""
 
     return asyncio.run(awaitable)
+
+
+def load_quarantined_model_response(
+    *,
+    output_dir: Path,
+    investigation_id: str,
+    receipt: ModelReceipt,
+) -> str | None:
+    """Read only a rejected assistant response from its private local artifact."""
+
+    artifact_root = (output_dir / "model-calls" / investigation_id).resolve()
+    artifact_path = receipt.artifact_path.resolve()
+    try:
+        artifact_path.relative_to(artifact_root)
+    except ValueError:
+        return None
+    try:
+        if (
+            not artifact_path.is_file()
+            or artifact_path.stat().st_size > _MAX_QUARANTINE_ARTIFACT_BYTES
+        ):
+            return None
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        choices = artifact["response"]["choices"]
+        content = choices[0]["message"]["content"]
+    except (OSError, json.JSONDecodeError, KeyError, IndexError, TypeError):
+        return None
+    return content if isinstance(content, str) and content else None
 
 
 async def start_investigation(
@@ -107,6 +139,7 @@ def cache_uploaded_source(settings: ForgeSettings, uploaded) -> LocalSourceRefer
 __all__ = [
     "cache_uploaded_source",
     "confirm_and_resume_live",
+    "load_quarantined_model_response",
     "resume_investigation",
     "run",
     "start_investigation",

@@ -22,6 +22,7 @@ from forge.persistence.metadata import InvestigationRecord
 from forge.ui.services import (
     cache_uploaded_source,
     confirm_and_resume_live,
+    load_quarantined_model_response,
     resume_investigation,
     run,
     start_investigation,
@@ -261,6 +262,24 @@ def _render_record(settings: ForgeSettings, record: InvestigationRecord) -> None
 
     if record.pending_decision is None:
         return
+    if (
+        record.pending_decision.kind is DecisionKind.RECOVERY
+        and record.model_receipts
+        and (
+            quarantined := load_quarantined_model_response(
+                output_dir=settings.output_dir,
+                investigation_id=record.id,
+                receipt=record.model_receipts[-1],
+            )
+        )
+    ):
+        st.subheader("Quarantined model response")
+        st.markdown(
+            "This is exactly what the model returned. Forge did **not** add it to the "
+            "canonical record because it failed the role contract. It remains visible here "
+            "so you can inspect it and decide what to do."
+        )
+        st.code(quarantined, language="json", wrap_lines=True)
     choice, custom = _decision_buttons(record.pending_decision)
     if choice is None:
         return

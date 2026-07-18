@@ -6,7 +6,9 @@ from streamlit.testing.v1 import AppTest
 
 from forge.application.budgets import DepthBudget, live_run_confirmation_prompt
 from forge.application.decisions import submit_decision
-from forge.domain.investigation import DepthMode, InvestigationWorkflow
+from forge.application.orchestrator import _recovery_prompt
+from forge.domain.investigation import DepthMode, InvestigationWorkflow, WorkflowStage
+from forge.gateways.model import FailureKind, ModelReceipt, ModelRole, ModelUsage
 from forge.persistence.markdown import MarkdownInvestigationRepository
 from forge.persistence.metadata import InvestigationRecord
 
@@ -179,6 +181,74 @@ def test_live_saved_record_requires_fresh_ae_confirmation_without_exposing_secre
     assert "Continue a live Quick investigation" in at.markdown[-1].value
     assert at.button(key="decision_A").label == "A — Approve live execution"
     assert "test-key-never-used" not in str(at.session_state)
+
+
+def test_recovery_screen_shows_quarantined_model_output_without_trusting_it(
+    streamlit_environment: Path,
+) -> None:
+    investigation_id = "inv_quarantined_response"
+    at_time = datetime(2026, 7, 18, tzinfo=UTC)
+    workflow = InvestigationWorkflow.start(depth=DepthMode.QUICK, at=at_time)
+    for stage in (
+        WorkflowStage.FOCUS_CHECKPOINT,
+        WorkflowStage.PREMISES_EXTRACTED,
+        WorkflowStage.EVIDENCE_CHECKPOINT,
+    ):
+        workflow = workflow.advance(stage, at=at_time)
+    approval_prompt = live_run_confirmation_prompt(
+        investigation_id=investigation_id,
+        depth=DepthMode.QUICK,
+        budget=DepthBudget(max_calls=6, max_output_tokens_per_call=1200),
+        source_attached=False,
+    )
+    artifact_path = (
+        streamlit_environment / "outputs/model-calls" / investigation_id / "call_invalid.json"
+    )
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        '{"response":{"choices":[{"message":{"content":"<b>model output, not HTML</b>"}}]}}',
+        encoding="utf-8",
+    )
+    receipt = ModelReceipt(
+        role=ModelRole.CONNECTION_FINDER,
+        model="test/model",
+        started_at=at_time,
+        finished_at=at_time,
+        duration_ms=0,
+        attempts=1,
+        usage=ModelUsage(),
+        prompt_contract_version="connection-finder-v1",
+        artifact_path=artifact_path,
+    )
+    record = InvestigationRecord(
+        id=investigation_id,
+        seed="Let me inspect rejected output.",
+        workflow=workflow,
+        decisions=(submit_decision(approval_prompt, "A"),),
+        pending_decision=_recovery_prompt(
+            investigation_id,
+            workflow.stage,
+            failure_kind=FailureKind.MALFORMED_OUTPUT,
+        ),
+        live_execution_approved=True,
+        model_receipts=(receipt,),
+    )
+    MarkdownInvestigationRepository(streamlit_environment / "outputs/investigations").save(record)
+
+    at = app_test().run()
+    saved_option = next(
+        option
+        for option in at.selectbox(key="saved_record").options
+        if option.startswith("Let me inspect")
+    )
+    at.selectbox(key="saved_record").select(saved_option)
+    at.button(key="resume_saved").click().run()
+    at.button(key="decision_A").click().run()
+
+    assert any("quarantined" in item.value.lower() for item in at.markdown)
+    assert "quarantined" in at.markdown[-1].value.lower()
+    assert any(item.value == "<b>model output, not HTML</b>" for item in at.code)
+    assert not at.exception
 
 
 def test_streamlit_defaults_to_loopback_binding() -> None:

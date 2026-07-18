@@ -219,7 +219,11 @@ class InvestigationOrchestrator:
                 recovery = record.model_copy(
                     update={
                         "model_receipts": (*record.model_receipts, error.receipt),
-                        "pending_decision": _recovery_prompt(record.id, record.workflow.stage),
+                        "pending_decision": _recovery_prompt(
+                            record.id,
+                            record.workflow.stage,
+                            failure_kind=error.failure_kind,
+                        ),
                     }
                 )
                 self._store.save(recovery)
@@ -624,11 +628,22 @@ def _manual_source_evidence(record: InvestigationRecord) -> tuple[Evidence, ...]
     )
 
 
-def _recovery_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPrompt:
+def _recovery_prompt(
+    investigation_id: str,
+    stage: WorkflowStage,
+    *,
+    failure_kind: FailureKind | None = None,
+) -> DecisionPrompt:
+    question = (
+        "The model returned a response, but Forge quarantined it because it did not satisfy "
+        "the role contract. Review it below, then choose what should happen next."
+        if failure_kind is FailureKind.MALFORMED_OUTPUT
+        else "The live model call failed. What should happen next?"
+    )
     return DecisionPrompt(
         id=f"{investigation_id}-recovery-{stage.value}-v1",
         kind=DecisionKind.RECOVERY,
-        question="The live model call failed. What should happen next?",
+        question=question,
         options=(
             DecisionOption(
                 letter=ChoiceLetter.A,

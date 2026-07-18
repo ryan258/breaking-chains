@@ -2,6 +2,8 @@
 
 from collections.abc import Mapping
 
+from pydantic import ValidationError
+
 from forge.application.budgets import BudgetPolicy
 from forge.application.decisions import ChoiceLetter, DecisionKind
 from forge.application.orchestrator import SpecialistContribution, SpecialistExecutionError
@@ -84,7 +86,14 @@ class LiveSpecialistRunner:
                 receipt=result.receipt,
             )
         assert result.output is not None
-        return self._parse_contribution(role, result.output, record, result.receipt)
+        try:
+            return self._parse_contribution(role, result.output, record, result.receipt)
+        except (ValidationError, ValueError) as error:
+            raise LiveSpecialistRunError(
+                f"Model provider {role.value} output failed validation.",
+                failure_kind=FailureKind.MALFORMED_OUTPUT,
+                receipt=result.receipt,
+            ) from error
 
     def _build_request(
         self,

@@ -270,6 +270,36 @@ async def test_recoverable_provider_failures_expose_sanitized_failure_and_receip
 
 
 @pytest.mark.asyncio
+async def test_semantically_invalid_provider_output_becomes_a_recoverable_failure() -> None:
+    confidence = {"level": "medium", "rationale": "Requires independent review."}
+    gateway = RecordingGateway(
+        {
+            "connections": [
+                {
+                    "id": "epi_invalid_connection",
+                    "category": "exploratory_item",
+                    "statement": "A possible connection with an invalid local basis.",
+                    "uncertainty": confidence,
+                    "provenance": {"origin": "Connection Finder"},
+                    "exploratory_type": "connection",
+                    "based_on": ["epi_missing_basis"],
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(
+        LiveSpecialistRunError,
+        match="connection_finder output failed validation",
+    ) as failure:
+        await runner(gateway).run(ModelRole.CONNECTION_FINDER, approved_record())
+
+    assert failure.value.failure_kind is FailureKind.MALFORMED_OUTPUT
+    assert failure.value.receipt.role is ModelRole.CONNECTION_FINDER
+    assert "epi_missing_basis" not in str(failure.value)
+
+
+@pytest.mark.asyncio
 async def test_live_failure_persists_receipt_and_retries_from_an_ae_recovery_prompt(
     tmp_path: Path,
 ) -> None:
