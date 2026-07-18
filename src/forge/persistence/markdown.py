@@ -123,8 +123,7 @@ def key_findings(record: InvestigationRecord) -> tuple[str, ...]:
     hypotheses = [
         item
         for item in record.epistemic_items
-        if isinstance(item, ExploratoryItem)
-        and item.exploratory_type is ExploratoryType.HYPOTHESIS
+        if isinstance(item, ExploratoryItem) and item.exploratory_type is ExploratoryType.HYPOTHESIS
     ]
     lines: list[str] = []
     if record.selected_focus:

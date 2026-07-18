@@ -241,8 +241,7 @@ def test_findings_summary_leads_the_rendered_report() -> None:
     assert text.index("## Findings") < text.index("## Overview")
     assert "Focus: Test whether measurement conditions explain the variation." in human_section
     assert (
-        "Proposed action: Repeat the measurement at two controlled temperatures."
-        in human_section
+        "Proposed action: Repeat the measurement at two controlled temperatures." in human_section
     )
     assert "Open questions: 1 recorded below." in human_section
 
