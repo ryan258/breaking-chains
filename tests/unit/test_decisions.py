@@ -8,6 +8,7 @@ from forge.application.decisions import (
     DecisionOption,
     DecisionPrompt,
     depth_mode_prompt,
+    local_continuation_prompt,
     normalize_choice,
     pause_resume_prompt,
     submit_decision,
@@ -157,9 +158,13 @@ def test_prompt_requires_one_recommended_choice() -> None:
 def test_mode_and_resume_prompts_preserve_the_ae_contract() -> None:
     mode = depth_mode_prompt(default_depth="standard")
     resume = pause_resume_prompt(investigation_id="inv_resume")
+    continuation = local_continuation_prompt(investigation_id="inv_resume")
 
     assert mode.kind is DecisionKind.MODE
     assert [option.letter for option in mode.options] == list(ChoiceLetter)
     assert mode.options[1].is_recommended is True
     assert resume.kind is DecisionKind.PAUSE_RESUME
     assert resume.options[0].is_recommended is True
+    assert [option.letter for option in continuation.options] == list(ChoiceLetter)
+    assert continuation.options[0].label == "Continue live with configured models"
+    assert continuation.options[1].label == "Continue locally without model calls"

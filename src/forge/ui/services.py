@@ -107,6 +107,16 @@ async def resume_investigation(
         return await orchestrator.resume(record.id)
 
 
+async def resume_deterministically(
+    settings: ForgeSettings,
+    record: InvestigationRecord,
+) -> OrchestrationView:
+    """Resume saved work with local fake specialists and no provider gateway."""
+
+    async with orchestrator_context(settings, live=False) as orchestrator:
+        return await orchestrator.resume(record.id)
+
+
 async def confirm_and_resume_live(
     settings: ForgeSettings,
     record: InvestigationRecord,
@@ -141,6 +151,7 @@ __all__ = [
     "confirm_and_resume_live",
     "load_quarantined_model_response",
     "resume_investigation",
+    "resume_deterministically",
     "run",
     "start_investigation",
     "submit_record_decision",

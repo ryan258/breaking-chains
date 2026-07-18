@@ -70,6 +70,33 @@ def test_streamlit_completes_deterministic_investigation_with_ae_controls(
     assert records[0].decisions[0].prompt.kind.value == "mode"
     assert records[0].decisions[0].selection.letter.value == "A"
     assert records[0].decisions[1].selection.letter.value == "D"
+    assert at.expander[-1].label == "View saved Markdown record"
+    assert at.code[-1].value.startswith("# Investigation: Why does the kettle whistle?")
+
+
+def test_paused_investigation_can_continue_locally_without_model_calls(
+    streamlit_environment: Path,
+) -> None:
+    at = app_test().run()
+    at.text_area(key="seed").input("Continue after a pause without another provider call.")
+    at.button(key="prepare_start").click().run()
+    at.button(key="decision_A").click().run()
+    at.button(key="decision_D").click().run()
+    at.button(key="decision_A").click().run()
+    at.button(key="decision_D").click().run()
+
+    assert at.button(key="decision_A").label == "A — Continue live with configured models"
+    assert at.button(key="decision_B").label == "B — Continue locally without model calls"
+
+    at.button(key="decision_B").click().run()
+
+    record = MarkdownInvestigationRepository(
+        streamlit_environment / "outputs/investigations"
+    ).list_records()[0]
+    assert record.workflow.stage is WorkflowStage.ACTION_CHECKPOINT
+    assert record.workflow.status.value == "active"
+    assert len(record.model_receipts) == 0
+    assert at.button(key="decision_A").label == "A — Accept action"
 
 
 def test_custom_answer_field_is_hidden_until_e_is_selected(
@@ -181,6 +208,69 @@ def test_live_saved_record_requires_fresh_ae_confirmation_without_exposing_secre
     assert "Continue a live Quick investigation" in at.markdown[-1].value
     assert at.button(key="decision_A").label == "A — Approve live execution"
     assert "test-key-never-used" not in str(at.session_state)
+
+
+def test_exhausted_live_record_opens_the_local_continuation_path(
+    streamlit_environment: Path,
+) -> None:
+    investigation_id = "inv_exhausted_live_resume"
+    at_time = datetime(2026, 7, 18, tzinfo=UTC)
+    workflow = InvestigationWorkflow.start(depth=DepthMode.QUICK, at=at_time)
+    for stage in (
+        WorkflowStage.FOCUS_CHECKPOINT,
+        WorkflowStage.PREMISES_EXTRACTED,
+        WorkflowStage.EVIDENCE_CHECKPOINT,
+        WorkflowStage.CONNECTIONS_GENERATED,
+    ):
+        workflow = workflow.advance(stage, at=at_time)
+    workflow = workflow.pause(at=at_time)
+    approval_prompt = live_run_confirmation_prompt(
+        investigation_id=investigation_id,
+        depth=DepthMode.QUICK,
+        budget=DepthBudget(max_calls=6, max_output_tokens_per_call=1200),
+        source_attached=False,
+    )
+    receipts = tuple(
+        ModelReceipt(
+            role=ModelRole.CONNECTION_FINDER,
+            model="test/model",
+            started_at=at_time,
+            finished_at=at_time,
+            duration_ms=0,
+            attempts=1,
+            usage=ModelUsage(),
+            prompt_contract_version="connection-finder-v1",
+            artifact_path=streamlit_environment / f"outputs/model-calls/call_{index}.json",
+        )
+        for index in range(6)
+    )
+    record = InvestigationRecord(
+        id=investigation_id,
+        seed="Continue locally after the live budget is exhausted.",
+        workflow=workflow,
+        decisions=(submit_decision(approval_prompt, "A"),),
+        live_execution_approved=True,
+        model_receipts=receipts,
+    )
+    MarkdownInvestigationRepository(streamlit_environment / "outputs/investigations").save(record)
+
+    at = app_test().run()
+    saved_option = next(
+        option
+        for option in at.selectbox(key="saved_record").options
+        if option.startswith("Continue locally")
+    )
+    at.selectbox(key="saved_record").select(saved_option)
+    at.button(key="resume_saved").click().run()
+
+    assert at.button(key="decision_A").label == "A — Continue live with configured models"
+    assert at.button(key="decision_B").label == "B — Continue locally without model calls"
+    assert not any("Approve live execution" in button.label for button in at.button)
+
+    at.button(key="decision_A").click().run()
+
+    assert at.button(key="decision_A").label == "A — Approve live execution"
+    assert not at.exception
 
 
 def test_recovery_screen_shows_quarantined_model_output_without_trusting_it(

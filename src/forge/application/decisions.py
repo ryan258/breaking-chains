@@ -201,6 +201,45 @@ def pause_resume_prompt(*, investigation_id: str) -> DecisionPrompt:
     )
 
 
+def local_continuation_prompt(*, investigation_id: str) -> DecisionPrompt:
+    """Offer a visible no-provider path for paused, unfinished work."""
+
+    return DecisionPrompt(
+        id=f"{investigation_id}-local-continuation-v1",
+        kind=DecisionKind.PAUSE_RESUME,
+        question="This investigation is paused before completion. How should it proceed?",
+        options=(
+            DecisionOption(
+                letter=ChoiceLetter.A,
+                label="Continue live with configured models",
+                description="Request a fresh bounded live batch from the saved stage.",
+                is_recommended=True,
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.B,
+                label="Continue locally without model calls",
+                description="Use deterministic local specialists from the saved stage.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.C,
+                label="Keep paused",
+                description="Leave the saved investigation unchanged.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.D,
+                label="Return to saved records",
+                description="Return without changing the investigation.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.E,
+                label="Custom answer",
+                description="Add only as much detail as desired and remain paused.",
+                accepts_custom_input=True,
+            ),
+        ),
+    )
+
+
 __all__ = [
     "ChoiceLetter",
     "DecisionAttempt",
@@ -208,6 +247,7 @@ __all__ = [
     "DecisionOption",
     "DecisionPrompt",
     "depth_mode_prompt",
+    "local_continuation_prompt",
     "normalize_choice",
     "pause_resume_prompt",
     "submit_decision",

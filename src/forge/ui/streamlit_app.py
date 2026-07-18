@@ -11,18 +11,20 @@ from forge.application.decisions import (
     DecisionKind,
     DecisionPrompt,
     depth_mode_prompt,
+    local_continuation_prompt,
     pause_resume_prompt,
     submit_decision,
 )
 from forge.application.runtime import budget_policy, repository
 from forge.application.source_ingestion import SourceImportError
 from forge.config import ConfigurationError, ForgeSettings, load_settings
-from forge.domain.investigation import DepthMode
+from forge.domain.investigation import DepthMode, WorkflowStage, WorkflowStatus
 from forge.persistence.metadata import InvestigationRecord
 from forge.ui.services import (
     cache_uploaded_source,
     confirm_and_resume_live,
     load_quarantined_model_response,
+    resume_deterministically,
     resume_investigation,
     run,
     start_investigation,
@@ -196,11 +198,21 @@ def _render_saved_records(settings: ForgeSettings) -> None:
 
 def _handle_pending_resume(settings: ForgeSettings) -> None:
     record = repository(settings).load(st.session_state.pending_resume_id)
+    budget = budget_policy(settings).for_depth(record.workflow.depth)
+    if (
+        record.live_execution_approved
+        and record.workflow.status is WorkflowStatus.PAUSED
+        and record.pending_decision is None
+        and len(record.model_receipts) >= budget.max_calls
+    ):
+        st.session_state.active_investigation_id = record.id
+        del st.session_state.pending_resume_id
+        st.rerun()
     prompt = (
         live_run_confirmation_prompt(
             investigation_id=record.id,
             depth=record.workflow.depth,
-            budget=budget_policy(settings).for_depth(record.workflow.depth),
+            budget=budget,
             source_attached=bool(record.source_references),
             resuming=True,
         )
@@ -229,6 +241,33 @@ def _handle_pending_resume(settings: ForgeSettings) -> None:
     st.rerun()
 
 
+def _handle_live_continuation(settings: ForgeSettings) -> None:
+    record = repository(settings).load(st.session_state.pending_live_continuation_id)
+    prompt = live_run_confirmation_prompt(
+        investigation_id=record.id,
+        depth=record.workflow.depth,
+        budget=budget_policy(settings).for_depth(record.workflow.depth),
+        source_attached=bool(record.source_references),
+        resuming=True,
+    )
+    choice, custom = _decision_buttons(prompt)
+    if choice is None:
+        return
+    if choice is not ChoiceLetter.A:
+        st.session_state.notice = custom or "The investigation remains paused."
+        st.session_state.active_investigation_id = record.id
+        del st.session_state.pending_live_continuation_id
+        st.session_state.pop("custom_prompt_id", None)
+        st.rerun()
+    view = run(confirm_and_resume_live(settings, record, prompt))
+    st.session_state.active_investigation_id = view.record.id
+    del st.session_state.pending_live_continuation_id
+    st.session_state.pop("custom_prompt_id", None)
+    if view.error:
+        st.session_state.notice = view.error
+    st.rerun()
+
+
 def _render_record(settings: ForgeSettings, record: InvestigationRecord) -> None:
     st.header("Current investigation")
     st.markdown(
@@ -253,14 +292,61 @@ def _render_record(settings: ForgeSettings, record: InvestigationRecord) -> None
 
     record_path = repository(settings).root / f"{record.id}.md"
     if record_path.is_file():
+        with st.expander("View saved Markdown record"):
+            st.code(record_path.read_text(encoding="utf-8"), language="markdown")
         st.download_button(
-            "Open saved Markdown record",
+            "Download saved Markdown record",
             data=record_path.read_bytes(),
             file_name=record_path.name,
             mime="text/markdown",
+            key="download_record",
         )
 
     if record.pending_decision is None:
+        if (
+            record.workflow.status is WorkflowStatus.PAUSED
+            and record.workflow.stage is not WorkflowStage.COMPLETED
+        ):
+            configured_models = (
+                settings.model_lead,
+                settings.model_researcher,
+                settings.model_connection_finder,
+                settings.model_synthesizer,
+                settings.model_skeptic,
+                settings.model_experiment_designer,
+            )
+            cost_note = (
+                "All configured role models are marked `:free`; provider availability and "
+                "rate limits can still apply."
+                if all(model.endswith(":free") for model in configured_models)
+                else "Configured models may report a cost; inspect the fresh confirmation first."
+            )
+            st.warning(
+                "This investigation is paused before completion. Option A requests a fresh "
+                "bounded live batch. Option B continues with local deterministic specialists "
+                f"and makes no provider calls. {cost_note}"
+            )
+            prompt = local_continuation_prompt(investigation_id=record.id)
+            choice, custom = _decision_buttons(prompt)
+            if choice is ChoiceLetter.A:
+                st.session_state.pending_live_continuation_id = record.id
+                st.session_state.pop("custom_prompt_id", None)
+                st.rerun()
+            if choice is ChoiceLetter.B:
+                view = run(resume_deterministically(settings, record))
+                st.session_state.active_investigation_id = view.record.id
+                if view.error:
+                    st.session_state.notice = view.error
+                st.session_state.pop("custom_prompt_id", None)
+                st.rerun()
+            if choice is ChoiceLetter.D:
+                st.session_state.pop("active_investigation_id", None)
+                st.session_state.pop("custom_prompt_id", None)
+                st.rerun()
+            if choice is not None:
+                st.session_state.notice = custom or "The investigation remains paused."
+                st.session_state.pop("custom_prompt_id", None)
+                st.rerun()
         return
     if (
         record.pending_decision.kind is DecisionKind.RECOVERY
@@ -302,6 +388,9 @@ def main() -> None:
         return
     if "pending_resume_id" in st.session_state:
         _handle_pending_resume(settings)
+        return
+    if "pending_live_continuation_id" in st.session_state:
+        _handle_live_continuation(settings)
         return
 
     active_id = st.session_state.get("active_investigation_id")
