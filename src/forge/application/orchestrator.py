@@ -546,12 +546,10 @@ class InvestigationOrchestrator:
         acquired = False
         try:
             os.fchmod(descriptor, 0o600)
-            while not acquired:
-                try:
-                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    acquired = True
-                except BlockingIOError:
-                    await asyncio.sleep(0.01)
+            # Block in a worker thread instead of polling; the adapters run one
+            # bounded operation per asyncio.run, so cancellation is not expected.
+            await asyncio.to_thread(fcntl.flock, descriptor, fcntl.LOCK_EX)
+            acquired = True
             yield
         finally:
             if acquired:

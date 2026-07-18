@@ -12,7 +12,7 @@ from forge.domain.identifiers import new_call_id
 from forge.domain.investigation import DepthMode
 from forge.gateways.model import ModelMessage, ModelRequest, ModelRole
 from forge.gateways.openrouter import OpenRouterGateway
-from forge.observability.trace import TraceWriter
+from forge.observability.trace import TraceWriter, write_private_file
 from forge.smoke_report import render_smoke_report
 
 
@@ -101,14 +101,7 @@ async def run() -> int:
     report_path.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(settings.output_dir, 0o700)
     os.chmod(report_path.parent, 0o700)
-    temporary_path = report_path.with_suffix(".md.tmp")
-    descriptor = os.open(temporary_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        handle.write(render_smoke_report(result))
-        handle.flush()
-        os.fsync(handle.fileno())
-    temporary_path.replace(report_path)
-    os.chmod(report_path, 0o600)
+    write_private_file(report_path, render_smoke_report(result))
     print(report_path)
     return 0 if result.is_success else 1
 

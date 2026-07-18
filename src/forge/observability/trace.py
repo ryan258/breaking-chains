@@ -28,6 +28,19 @@ _SENSITIVE_KEYS = frozenset(
 _REDACTED = "[REDACTED]"
 
 
+def write_private_file(path: Path, content: str) -> None:
+    """Write owner-only text durably: temp file, fsync, atomic replace, chmod."""
+
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(content)
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.replace(path)
+    os.chmod(path, 0o600)
+
+
 class TraceWriter:
     """Persist full sanitized call artifacts beside compact operational events."""
 
@@ -127,16 +140,9 @@ class TraceWriter:
 
     def _write_json_atomically(self, path: Path, payload: Mapping[str, Any]) -> None:
         self._ensure_private_tree(self._output_root.resolve(), path.parent)
-        temporary = path.with_suffix(f"{path.suffix}.tmp")
         serialized = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         with self._lock:
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(serialized)
-                handle.flush()
-                os.fsync(handle.fileno())
-            temporary.replace(path)
-            os.chmod(path, 0o600)
+            write_private_file(path, serialized)
 
     def _append_jsonl(self, path: Path, payload: Mapping[str, Any]) -> None:
         self._ensure_private_tree(self._log_root.resolve(), path.parent.resolve())
