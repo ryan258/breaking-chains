@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from forge.application.decisions import ChoiceLetter
-from forge.application.orchestrator import InvestigationOrchestrator
+from forge.application.budgets import DepthBudget, live_run_confirmation_prompt
+from forge.application.decisions import ChoiceLetter, submit_decision
+from forge.application.orchestrator import InvestigationOrchestrator, SpecialistContribution
 from forge.domain.investigation import DepthMode, WorkflowStage, WorkflowStatus
 from forge.gateways.fake import DeterministicSpecialistRunner
 from forge.gateways.model import ModelRole
 from forge.persistence.markdown import MarkdownInvestigationRepository
+from forge.persistence.metadata import ChallengeDisposition, SkepticalChallenge
 from forge.persistence.sqlite import SQLiteProjection
 from forge.persistence.unit_of_work import InvestigationUnitOfWork
 
@@ -62,6 +64,59 @@ async def choose_a(orchestrator: InvestigationOrchestrator, view):
 
 
 @pytest.mark.asyncio
+async def test_start_persists_live_approval_before_lead_focus_checkpoint(tmp_path: Path) -> None:
+    orchestrator, _, runner, markdown, projection = setup_orchestrator(tmp_path)
+    prompt = live_run_confirmation_prompt(
+        investigation_id="inv_live_approved",
+        depth=DepthMode.STANDARD,
+        budget=DepthBudget(max_calls=10, max_output_tokens_per_call=2400),
+        source_attached=False,
+    )
+    approval = submit_decision(prompt, "A")
+
+    focus = await orchestrator.start(
+        investigation_id="inv_live_approved",
+        seed="Run only after recorded approval.",
+        depth=DepthMode.STANDARD,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+        live_confirmation=approval,
+    )
+
+    assert focus.record.live_execution_approved is True
+    assert focus.record.decisions == (approval,)
+    assert runner.calls == [ModelRole.LEAD]
+    assert markdown.load(focus.record.id) == focus.record
+    assert projection.load_record(focus.record.id) == focus.record
+
+    resumed_approval = submit_decision(prompt, "A")
+    updated = await orchestrator.record_live_confirmation(focus.record.id, resumed_approval)
+    assert len(updated.decisions) == 2
+    assert updated.decisions[-1].prompt.kind.value == "live_confirmation"
+
+
+@pytest.mark.asyncio
+async def test_live_approval_cannot_be_reused_for_another_investigation(tmp_path: Path) -> None:
+    orchestrator, _, runner, _, _ = setup_orchestrator(tmp_path)
+    prompt = live_run_confirmation_prompt(
+        investigation_id="inv_original",
+        depth=DepthMode.QUICK,
+        budget=DepthBudget(max_calls=6, max_output_tokens_per_call=1200),
+        source_attached=False,
+    )
+
+    with pytest.raises(ValueError, match="does not belong"):
+        await orchestrator.start(
+            investigation_id="inv_different",
+            seed="Do not run this with another investigation's approval.",
+            depth=DepthMode.QUICK,
+            at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+            live_confirmation=submit_decision(prompt, "A"),
+        )
+
+    assert runner.calls == []
+
+
+@pytest.mark.asyncio
 async def test_quick_investigation_reaches_completed_through_all_checkpoints(
     tmp_path: Path,
 ) -> None:
@@ -107,6 +162,57 @@ async def test_quick_investigation_reaches_completed_through_all_checkpoints(
     ]
     assert markdown.load(completed.record.id) == completed.record
     assert projection.load_record(completed.record.id) == completed.record
+
+
+@pytest.mark.asyncio
+async def test_standard_skeptical_rejection_returns_to_evidence_review_once(
+    tmp_path: Path,
+) -> None:
+    base_runner = DeterministicSpecialistRunner()
+
+    class RejectingRunner:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def run(self, role, record):
+            self.calls.append(role)
+            if role is ModelRole.SKEPTIC:
+                return SpecialistContribution(
+                    skeptical_challenges=(
+                        SkepticalChallenge(
+                            target_id="epi_constraint_hypothesis",
+                            challenge="The causal structure is contradicted by the fixture.",
+                            disposition=ChallengeDisposition.REJECT,
+                            rationale="Return to the evidence before designing an action.",
+                        ),
+                    )
+                )
+            return await base_runner.run(role, record)
+
+    markdown = MarkdownInvestigationRepository(tmp_path / "outputs" / "investigations")
+    store = InvestigationUnitOfWork(
+        markdown,
+        SQLiteProjection(tmp_path / "data" / "forge.sqlite3"),
+    )
+    rejecting_runner = RejectingRunner()
+    orchestrator = InvestigationOrchestrator(
+        store=store,
+        specialists=rejecting_runner,
+        clock=TickingClock(),
+        lock_root=tmp_path / "locks",
+    )
+    focus = await orchestrator.start(
+        investigation_id="inv_skeptical_loop",
+        seed="Reject weak causal structure.",
+        depth=DepthMode.STANDARD,
+        at=datetime(2026, 7, 16, 21, 0, tzinfo=UTC),
+    )
+    evidence = await choose_a(orchestrator, focus)
+    returned_to_evidence = await choose_a(orchestrator, evidence)
+
+    assert returned_to_evidence.record.workflow.stage is WorkflowStage.EVIDENCE_CHECKPOINT
+    assert returned_to_evidence.record.skeptical_revision_cycles == 1
+    assert ModelRole.EXPERIMENT_DESIGNER not in rejecting_runner.calls
 
 
 @pytest.mark.asyncio

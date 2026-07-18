@@ -14,14 +14,23 @@ from typing import Protocol
 
 from pydantic import TypeAdapter, ValidationError
 
+from forge.application.budgets import BudgetExceeded
 from forge.application.decisions import (
     ChoiceLetter,
+    DecisionAttempt,
     DecisionKind,
     DecisionOption,
     DecisionPrompt,
     submit_decision,
 )
-from forge.domain.epistemics import EpistemicItem
+from forge.domain.epistemics import (
+    Confidence,
+    ConfidenceLevel,
+    EpistemicItem,
+    Evidence,
+    PrimarySourceDetails,
+    Provenance,
+)
 from forge.domain.identifiers import InvestigationId
 from forge.domain.investigation import (
     DepthMode,
@@ -29,8 +38,14 @@ from forge.domain.investigation import (
     WorkflowStage,
     WorkflowStatus,
 )
-from forge.gateways.model import ModelRole
-from forge.persistence.metadata import ActionProposal, InvestigationRecord, SkepticalChallenge
+from forge.gateways.model import FailureKind, ModelReceipt, ModelRole
+from forge.persistence.metadata import (
+    ActionProposal,
+    ChallengeDisposition,
+    InvestigationRecord,
+    LocalSourceReference,
+    SkepticalChallenge,
+)
 
 _INVESTIGATION_ID_ADAPTER = TypeAdapter(InvestigationId)
 
@@ -41,6 +56,8 @@ class SpecialistContribution:
     skeptical_challenges: tuple[SkepticalChallenge, ...] = ()
     selected_action: ActionProposal | None = None
     unresolved_questions: tuple[str, ...] = ()
+    decision_prompt: DecisionPrompt | None = None
+    model_receipts: tuple[ModelReceipt, ...] = ()
 
 
 class SpecialistRunner(Protocol):
@@ -49,6 +66,21 @@ class SpecialistRunner(Protocol):
         role: ModelRole,
         record: InvestigationRecord,
     ) -> SpecialistContribution: ...
+
+
+class SpecialistExecutionError(RuntimeError):
+    """A sanitized specialist failure that must be persisted before recovery."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_kind: FailureKind,
+        receipt: ModelReceipt,
+    ) -> None:
+        super().__init__(message)
+        self.failure_kind = failure_kind
+        self.receipt = receipt
 
 
 class InvestigationStore(Protocol):
@@ -83,6 +115,12 @@ _ROLE_STAGES = {
     ),
 }
 
+_MAX_SKEPTICAL_REVISIONS = {
+    DepthMode.QUICK: 0,
+    DepthMode.STANDARD: 1,
+    DepthMode.DEEP: 3,
+}
+
 
 class InvestigationOrchestrator:
     def __init__(
@@ -105,13 +143,35 @@ class InvestigationOrchestrator:
         seed: str,
         depth: DepthMode,
         at: datetime,
+        source_reference: LocalSourceReference | None = None,
+        prior_investigation_ids: tuple[str, ...] = (),
+        preflight_decisions: tuple[DecisionAttempt, ...] = (),
+        live_confirmation: DecisionAttempt | None = None,
     ) -> OrchestrationView:
+        if (
+            live_confirmation is not None
+            and live_confirmation.prompt.id != f"{investigation_id}-live-confirmation-v1"
+        ):
+            raise ValueError("live confirmation does not belong to this investigation")
         async with self._investigation_lock(investigation_id):
             if not self._store.exists(investigation_id):
+                live_approved = bool(
+                    live_confirmation is not None
+                    and live_confirmation.selection is not None
+                    and live_confirmation.prompt.kind is DecisionKind.LIVE_CONFIRMATION
+                    and live_confirmation.selection.letter is ChoiceLetter.A
+                )
                 record = InvestigationRecord(
                     id=investigation_id,
                     seed=seed,
                     workflow=InvestigationWorkflow.start(depth=depth, at=at),
+                    decisions=(
+                        *preflight_decisions,
+                        *((live_confirmation,) if live_confirmation else ()),
+                    ),
+                    source_references=(source_reference,) if source_reference else (),
+                    prior_investigation_ids=prior_investigation_ids,
+                    live_execution_approved=live_approved,
                 )
                 self._store.save(record)
             return await self._run_until_checkpoint_locked(investigation_id)
@@ -120,6 +180,32 @@ class InvestigationOrchestrator:
         async with self._investigation_lock(investigation_id):
             return await self._run_until_checkpoint_locked(investigation_id)
 
+    async def record_live_confirmation(
+        self,
+        investigation_id: str,
+        confirmation: DecisionAttempt,
+    ) -> InvestigationRecord:
+        """Persist a fresh A approval before resuming paid work."""
+
+        if (
+            confirmation.error is not None
+            or confirmation.selection is None
+            or confirmation.prompt.kind is not DecisionKind.LIVE_CONFIRMATION
+            or confirmation.prompt.id != f"{investigation_id}-live-confirmation-v1"
+            or confirmation.selection.letter is not ChoiceLetter.A
+        ):
+            raise ValueError("resuming live execution requires an A confirmation")
+        async with self._investigation_lock(investigation_id):
+            record = self._store.load(investigation_id)
+            updated = record.model_copy(
+                update={
+                    "decisions": (*record.decisions, confirmation),
+                    "live_execution_approved": True,
+                }
+            )
+            self._store.save(updated)
+            return updated
+
     async def _run_until_checkpoint_locked(self, investigation_id: str) -> OrchestrationView:
         record = self._store.load(investigation_id)
         while record.workflow.status is WorkflowStatus.ACTIVE:
@@ -127,7 +213,35 @@ class InvestigationOrchestrator:
                 return OrchestrationView(record=record, prompt=None)
             if record.pending_decision is not None:
                 return OrchestrationView(record=record, prompt=record.pending_decision)
-            record = await self._advance_one_stage(record)
+            try:
+                record = await self._advance_one_stage(record)
+            except SpecialistExecutionError as error:
+                recovery = record.model_copy(
+                    update={
+                        "model_receipts": (*record.model_receipts, error.receipt),
+                        "pending_decision": _recovery_prompt(record.id, record.workflow.stage),
+                    }
+                )
+                self._store.save(recovery)
+                return OrchestrationView(
+                    record=recovery,
+                    prompt=recovery.pending_decision,
+                    error=str(error),
+                )
+            except BudgetExceeded as error:
+                stopped = record.model_copy(
+                    update={
+                        "pending_decision": _budget_exhausted_prompt(
+                            record.id, record.workflow.stage
+                        )
+                    }
+                )
+                self._store.save(stopped)
+                return OrchestrationView(
+                    record=stopped,
+                    prompt=stopped.pending_decision,
+                    error=str(error),
+                )
         return OrchestrationView(record=record, prompt=record.pending_decision)
 
     async def submit_decision(
@@ -156,7 +270,12 @@ class InvestigationOrchestrator:
     ) -> OrchestrationView:
         record = self._store.load(investigation_id)
         prompt = record.pending_decision
-        expected_kind = self._expected_decision_kind(record.workflow.stage)
+        expected_kind = (
+            prompt.kind
+            if prompt is not None
+            and prompt.kind in {DecisionKind.RECOVERY, DecisionKind.BUDGET_EXHAUSTED}
+            else self._expected_decision_kind(record.workflow.stage)
+        )
         if record.workflow.status is WorkflowStatus.PAUSED:
             return OrchestrationView(
                 record=record,
@@ -174,6 +293,40 @@ class InvestigationOrchestrator:
             return OrchestrationView(record=record, prompt=prompt, error=attempt.error)
         assert attempt.selection is not None
 
+        if prompt.kind is DecisionKind.BUDGET_EXHAUSTED:
+            stopped_updates: dict[str, object] = {
+                "decisions": (*record.decisions, attempt),
+                "pending_decision": None,
+                "workflow": record.workflow.pause(at=self._at(record)),
+            }
+            if attempt.custom_answer:
+                stopped_updates["unresolved_questions"] = (
+                    *record.unresolved_questions,
+                    attempt.custom_answer,
+                )
+            record = record.model_copy(update=stopped_updates)
+            self._store.save(record)
+            return OrchestrationView(record=record, prompt=None)
+
+        if prompt.kind is DecisionKind.RECOVERY:
+            recovery_updates: dict[str, object] = {
+                "decisions": (*record.decisions, attempt),
+                "pending_decision": None,
+            }
+            if attempt.selection.letter is not ChoiceLetter.A:
+                recovery_updates["workflow"] = record.workflow.pause(at=self._at(record))
+                recovery_updates["pending_decision"] = prompt
+                if attempt.custom_answer:
+                    recovery_updates["unresolved_questions"] = (
+                        *record.unresolved_questions,
+                        attempt.custom_answer,
+                    )
+            record = record.model_copy(update=recovery_updates)
+            self._store.save(record)
+            if attempt.selection.letter is not ChoiceLetter.A:
+                return OrchestrationView(record=record, prompt=None)
+            return await self._run_until_checkpoint_locked(investigation_id)
+
         updates: dict[str, object] = {
             "decisions": (*record.decisions, attempt),
             "pending_decision": None,
@@ -184,17 +337,37 @@ class InvestigationOrchestrator:
             ChoiceLetter.B,
             ChoiceLetter.D,
         }
+        source_paused = stage is WorkflowStage.SOURCE_CONSENT and letter is ChoiceLetter.D
         should_pause = (
-            stage is WorkflowStage.EVIDENCE_CHECKPOINT and letter is ChoiceLetter.D
-        ) or action_deferred
+            (stage is WorkflowStage.EVIDENCE_CHECKPOINT and letter is ChoiceLetter.D)
+            or action_deferred
+            or source_paused
+        )
         if should_pause:
             updates["workflow"] = record.workflow.pause(at=self._at(record))
-        if action_deferred:
+        if action_deferred or source_paused:
             # Deferring is not acceptance: keep the question open so resume
             # re-asks it instead of falling through to COMPLETED.
             updates["pending_decision"] = prompt
 
-        if stage is WorkflowStage.FOCUS_CHECKPOINT:
+        if stage is WorkflowStage.SOURCE_CONSENT:
+            updates["source_transmission_approved"] = letter is ChoiceLetter.A
+            if letter in {ChoiceLetter.B, ChoiceLetter.C}:
+                updates["unresolved_questions"] = (
+                    *record.unresolved_questions,
+                    "Local source transmission declined; add premises or evidence manually.",
+                )
+                if letter is ChoiceLetter.C:
+                    updates["epistemic_items"] = (
+                        *record.epistemic_items,
+                        *_manual_source_evidence(record),
+                    )
+            elif letter is ChoiceLetter.E:
+                updates["unresolved_questions"] = (
+                    *record.unresolved_questions,
+                    attempt.custom_answer,
+                )
+        elif stage is WorkflowStage.FOCUS_CHECKPOINT:
             updates["selected_focus"] = attempt.custom_answer or attempt.selection.label
         elif stage is WorkflowStage.EVIDENCE_CHECKPOINT and attempt.custom_answer:
             updates["unresolved_questions"] = (
@@ -237,7 +410,11 @@ class InvestigationOrchestrator:
     async def _advance_one_stage(self, record: InvestigationRecord) -> InvestigationRecord:
         stage = record.workflow.stage
         if stage is WorkflowStage.SEEDED:
-            return self._persist_checkpoint(record, WorkflowStage.FOCUS_CHECKPOINT)
+            if record.source_references:
+                return self._persist_checkpoint(record, WorkflowStage.SOURCE_CONSENT)
+            return await self._persist_focus_checkpoint(record)
+        if stage is WorkflowStage.SOURCE_CONSENT:
+            return await self._persist_focus_checkpoint(record)
         if stage is WorkflowStage.PREMISES_EXTRACTED:
             return self._persist_checkpoint(record, WorkflowStage.EVIDENCE_CHECKPOINT)
         if stage is WorkflowStage.ACTIONS_DESIGNED:
@@ -251,7 +428,39 @@ class InvestigationOrchestrator:
         role, next_stage = role_stage
         contribution = await self._specialists.run(role, record)
         record = self._apply_contribution(record, role, contribution)
+        if (
+            role is ModelRole.SKEPTIC
+            and any(
+                challenge.disposition is ChallengeDisposition.REJECT
+                for challenge in contribution.skeptical_challenges
+            )
+            and record.skeptical_revision_cycles < _MAX_SKEPTICAL_REVISIONS[record.workflow.depth]
+        ):
+            record = record.model_copy(
+                update={"skeptical_revision_cycles": record.skeptical_revision_cycles + 1}
+            )
+            return self._persist_checkpoint(record, WorkflowStage.EVIDENCE_CHECKPOINT)
         return self._persist_transition(record, next_stage)
+
+    async def _persist_focus_checkpoint(
+        self,
+        record: InvestigationRecord,
+    ) -> InvestigationRecord:
+        if not record.live_execution_approved:
+            return self._persist_checkpoint(record, WorkflowStage.FOCUS_CHECKPOINT)
+        contribution = await self._specialists.run(ModelRole.LEAD, record)
+        if contribution.decision_prompt is None:
+            raise RuntimeError("live Lead did not return a focus decision")
+        record = self._apply_contribution(record, ModelRole.LEAD, contribution)
+        advanced = record.workflow.advance(WorkflowStage.FOCUS_CHECKPOINT, at=self._at(record))
+        checkpoint = record.model_copy(
+            update={
+                "workflow": advanced,
+                "pending_decision": contribution.decision_prompt,
+            }
+        )
+        self._store.save(checkpoint)
+        return checkpoint
 
     def _persist_checkpoint(
         self,
@@ -288,6 +497,7 @@ class InvestigationOrchestrator:
                 *record.unresolved_questions,
                 *contribution.unresolved_questions,
             ),
+            "model_receipts": (*record.model_receipts, *contribution.model_receipts),
         }
         if role is ModelRole.SKEPTIC:
             updates["skeptical_challenges"] = (
@@ -301,6 +511,7 @@ class InvestigationOrchestrator:
     @staticmethod
     def _expected_decision_kind(stage: WorkflowStage) -> DecisionKind | None:
         return {
+            WorkflowStage.SOURCE_CONSENT: DecisionKind.SOURCE_CONSENT,
             WorkflowStage.FOCUS_CHECKPOINT: DecisionKind.FOCUS_CHECKPOINT,
             WorkflowStage.EVIDENCE_CHECKPOINT: DecisionKind.EVIDENCE_CHECKPOINT,
             WorkflowStage.ACTION_CHECKPOINT: DecisionKind.ACTION_CHECKPOINT,
@@ -349,6 +560,15 @@ def _decision_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPro
     if kind is None:
         raise ValueError("only checkpoint stages have decision prompts")
     question, labels = {
+        WorkflowStage.SOURCE_CONSENT: (
+            "May this local source be sent to the configured OpenRouter role models?",
+            (
+                "Approve transmission",
+                "Continue without source",
+                "Use manual evidence",
+                "Pause before deciding",
+            ),
+        ),
         WorkflowStage.FOCUS_CHECKPOINT: (
             "Which focus should guide this investigation?",
             ("Trace constraints", "Challenge assumptions", "Seek connections", "Keep broad"),
@@ -380,9 +600,108 @@ def _decision_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPro
     )
 
 
+def _manual_source_evidence(record: InvestigationRecord) -> tuple[Evidence, ...]:
+    """Retain inspectable source identities without copying or transmitting content."""
+
+    return tuple(
+        Evidence(
+            id=f"epi_manual_source_{index}",
+            statement=f"Local primary source retained for manual review: {Path(source.path).name}",
+            uncertainty=Confidence(
+                level=ConfidenceLevel.LOW,
+                rationale="The source content has not been interpreted or transmitted.",
+            ),
+            provenance=Provenance(
+                origin="User-supplied local primary source",
+                locator=source.path,
+            ),
+            details=PrimarySourceDetails(
+                source_reference=source.path,
+                content_hash=source.sha256,
+            ),
+        )
+        for index, source in enumerate(record.source_references, start=1)
+    )
+
+
+def _recovery_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPrompt:
+    return DecisionPrompt(
+        id=f"{investigation_id}-recovery-{stage.value}-v1",
+        kind=DecisionKind.RECOVERY,
+        question="The live model call failed. What should happen next?",
+        options=(
+            DecisionOption(
+                letter=ChoiceLetter.A,
+                label="Retry now",
+                description="Retry the same unfinished stage within the remaining call budget.",
+                is_recommended=True,
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.B,
+                label="Resume later",
+                description="Pause and keep this recovery question for the next session.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.C,
+                label="Change model",
+                description="Pause so the role model can be changed in local configuration.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.D,
+                label="Stop here",
+                description="Pause without discarding completed work or the failed receipt.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.E,
+                label="Custom answer",
+                description="Add only as much detail as desired and pause safely.",
+                accepts_custom_input=True,
+            ),
+        ),
+    )
+
+
+def _budget_exhausted_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPrompt:
+    return DecisionPrompt(
+        id=f"{investigation_id}-budget-exhausted-{stage.value}-v1",
+        kind=DecisionKind.BUDGET_EXHAUSTED,
+        question="The approved model-call budget is exhausted. How should this run stop?",
+        options=(
+            DecisionOption(
+                letter=ChoiceLetter.A,
+                label="Stop safely",
+                description="Pause without making another provider call.",
+                is_recommended=True,
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.B,
+                label="Review receipts",
+                description="Pause so saved call usage and cost can be inspected.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.C,
+                label="Review depth",
+                description="Pause before starting a separately approved investigation.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.D,
+                label="Stop here",
+                description="Pause and preserve all completed work.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.E,
+                label="Custom answer",
+                description="Add only as much detail as desired and pause safely.",
+                accepts_custom_input=True,
+            ),
+        ),
+    )
+
+
 __all__ = [
     "InvestigationOrchestrator",
     "OrchestrationView",
     "SpecialistContribution",
+    "SpecialistExecutionError",
     "SpecialistRunner",
 ]

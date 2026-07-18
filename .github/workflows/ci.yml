@@ -1,0 +1,41 @@
+name: Acceptance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OPENROUTER_API_KEY: deterministic-placeholder-not-a-live-key
+      FORGE_MODEL_LEAD: not-a-live/model
+      FORGE_MODEL_RESEARCHER: not-a-live/model
+      FORGE_MODEL_CONNECTION_FINDER: not-a-live/model
+      FORGE_MODEL_SYNTHESIZER: not-a-live/model
+      FORGE_MODEL_SKEPTIC: not-a-live/model
+      FORGE_MODEL_EXPERIMENT_DESIGNER: not-a-live/model
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Install isolated Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run deterministic acceptance gate
+        run: uv run python scripts/verify_acceptance.py
+
+      - name: Build source and wheel distributions
+        run: uv build

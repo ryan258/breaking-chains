@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 2 implementation plan for human review. It is derived from the approved [technical specification](./spec.md). No application code should be written until this plan is approved.
+Approved living Phase 2 implementation plan derived from the [technical specification](./spec.md). Tasks 1-9 are implemented; later tasks remain incomplete unless their acceptance criteria and verification are checked below.
 
 ## Overview
 
@@ -105,7 +105,7 @@ The graph is intentionally foundation-heavy only until Task 6. Tasks 7 onward ar
 
 **Acceptance criteria:**
 
-- [x] Premises cannot be stored as evidence, and derived claims must name their complete dependency set.
+- [x] Premises cannot be stored as evidence, and derived claims must name existing local dependencies without dangling references.
 - [x] Evidence subtypes enforce their required provenance fields, including method/unit/conditions for measurements.
 - [x] High confidence cannot change an item's epistemic category.
 
@@ -247,10 +247,10 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 ## Checkpoint 2: Persistence and provider boundary
 
-- [ ] `uv run pytest tests/unit tests/integration tests/contract`
-- [ ] Rebuild a test SQLite index from Markdown and compare every canonical relationship.
-- [ ] Confirm timeout, rate-limit, malformed-output, and provider-error fixtures map to sanitized application results.
-- [ ] Scan generated records and captured logs for configured secret values.
+- [x] `uv run pytest tests/unit tests/integration tests/contract`
+- [x] Rebuild a test SQLite index from Markdown and compare every canonical relationship.
+- [x] Confirm timeout, rate-limit, malformed-output, and provider-error fixtures map to sanitized application results.
+- [x] Scan generated records and captured logs for configured secret values.
 
 ## Phase 3: Walking Skeleton and Terminal Workflow
 
@@ -282,7 +282,7 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 ### Task 8: Deliver the CLI investigation slice
 
-**Description:** Add commands to validate configuration, start/list/show/pause/resume investigations, and drive the walking skeleton through case-insensitive single-letter decisions.
+**Description:** Add commands to validate configuration, start/list/resume investigations, and drive the walking skeleton through case-insensitive single-letter decisions.
 
 **Acceptance criteria:**
 
@@ -300,18 +300,17 @@ Active working records are also canonical from Task 7 onward so every completed 
 **Files likely touched:**
 
 - `src/forge/cli.py`
-- `src/forge/application/presenter.py`
 - `tests/e2e/test_cli.py`
 - `pyproject.toml`
 
-**Estimated scope:** Medium, 4 files.
+**Estimated scope:** Medium, 3 files.
 
 ## Checkpoint 3: First runnable forge
 
 - [x] `uv run forge config-check`
 - [x] Complete, interrupt, and resume the fake-model CLI workflow.
 - [x] Inspect both Markdown and SQLite outputs.
-- [x] Confirm every decision can be made without free-form typing unless E is chosen.
+- [x] Confirm every implemented checkpoint decision can be made without free-form typing unless E is chosen.
 
 ## Phase 4: Production Specialist Contracts
 
@@ -321,15 +320,15 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] No local source content reaches `ModelGateway` before an explicit recorded A-E confirmation.
-- [ ] UTF-8 text and Markdown import successfully; unsupported or binary formats fail clearly, while declined transmission preserves a manual premise/evidence path.
-- [ ] Imported content is delimited as untrusted data and cannot change system or role instructions.
+- [x] No local source content reaches `ModelGateway` before an explicit recorded A-E confirmation.
+- [x] UTF-8 text and Markdown import successfully; unsupported or binary formats fail clearly, while choosing the manual path creates a typed local primary-source reference without copying source contents.
+- [x] Imported content is delimited as untrusted data and cannot change system or role instructions.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/integration/test_source_consent.py tests/integration/test_source_isolation.py`
-- [ ] `uv run pytest tests/integration/test_source_consent.py -k "text or markdown or unsupported"`
-- [ ] Inspect fake-gateway calls and confirm zero source bytes before consent.
+- [x] `uv run pytest tests/integration/test_source_consent.py tests/integration/test_source_isolation.py`
+- [x] `uv run pytest tests/integration/test_source_consent.py -k "text or markdown or unsupported"`
+- [x] Inspect fake-gateway calls and confirm zero source bytes before consent.
 
 **Dependencies:** Tasks 3, 6, and 7.
 
@@ -348,14 +347,14 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] Lead output always produces one focused A-E decision with E custom and a reasoned recommendation.
-- [ ] Researcher output cannot classify premises or deductions as evidence and must identify unsupported assumptions.
-- [ ] Supplied source content is delimited as untrusted data and cannot override role instructions.
+- [x] Lead output always produces one focused A-E decision with E custom and a reasoned recommendation.
+- [x] Researcher output cannot classify premises or deductions as evidence and must identify unsupported assumptions.
+- [x] Supplied source content is delimited as untrusted data and cannot override role instructions.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/contract/test_lead_role.py tests/contract/test_researcher_role.py`
-- [ ] Run prompt-injection fixtures and confirm they remain quoted source material.
+- [x] `uv run pytest tests/contract/test_lead_role.py tests/contract/test_researcher_role.py`
+- [x] Run prompt-injection fixtures and confirm they remain quoted source material.
 
 **Dependencies:** Tasks 2, 6, 7, and 9.
 
@@ -374,14 +373,14 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] Connections name their basis and uncertainty and are never promoted to evidence by analogy alone.
-- [ ] Each derived claim and hypothesis references its complete dependency set.
-- [ ] Synthesizer output preserves competing explanations when the evidence does not distinguish them.
+- [x] Connections name their basis and uncertainty and are never promoted to evidence by analogy alone.
+- [x] Each derived claim and hypothesis references its complete dependency set.
+- [x] Synthesizer output preserves competing explanations when the evidence does not distinguish them.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/contract/test_connection_role.py tests/contract/test_synthesizer_role.py`
-- [ ] Verify a fixture with a tempting analogy remains labeled exploratory.
+- [x] `uv run pytest tests/contract/test_connection_role.py tests/contract/test_synthesizer_role.py`
+- [x] Verify a fixture with a tempting analogy remains labeled exploratory.
 
 **Dependencies:** Tasks 2, 5, 6, 7, and 9.
 
@@ -396,10 +395,10 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 ## Checkpoint 4: Evidence and synthesis safety gate
 
-- [ ] `uv run pytest tests/contract tests/integration/test_source_consent.py tests/integration/test_source_isolation.py`
-- [ ] Confirm denied source consent produces zero source-bearing gateway calls.
-- [ ] Confirm each implemented prompt contract has a recorded version identifier.
-- [ ] Review adversarial fixtures for injection, false foundations, analogy-as-proof, and unsupported certainty.
+- [x] `uv run pytest tests/contract tests/integration/test_source_consent.py tests/integration/test_source_isolation.py`
+- [x] Confirm denied source consent produces zero source-bearing gateway calls.
+- [x] Confirm each implemented prompt contract has a recorded version identifier.
+- [x] Review adversarial fixtures for injection, false foundations, analogy-as-proof, and unsupported certainty.
 
 ## Phase 5: Full Orchestration and Cost Control
 
@@ -409,14 +408,14 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] Every generated hypothesis receives a retain, revise, or reject disposition with reasons.
-- [ ] Surviving hypotheses include expected and disconfirming observations.
-- [ ] Proposed tests state procedure, cost, risk, stopping condition, and reproducibility needs—or explain why no responsible test exists.
+- [x] Every generated hypothesis receives a retain, revise, or reject disposition with reasons.
+- [x] Surviving hypotheses include expected and disconfirming observations.
+- [x] Proposed tests state procedure, cost, risk, stopping condition, and reproducibility needs—or explain why no responsible test exists.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/contract/test_skeptic_role.py tests/contract/test_experiment_role.py`
-- [ ] Verify contradiction fixtures cause revision or rejection rather than silent omission.
+- [x] `uv run pytest tests/contract/test_skeptic_role.py tests/contract/test_experiment_role.py`
+- [x] Verify contradiction fixtures cause revision or rejection rather than silent omission.
 
 **Dependencies:** Tasks 2, 6, 7, and 9.
 
@@ -435,15 +434,19 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] Quick, Standard, and Deep enforce configured call and per-call output-token limits and visibly change orchestration behavior.
-- [ ] Skeptical rejection can return the workflow to evidence review or synthesis without corrupting history.
-- [ ] Timeout, rate limit, malformed output, and cancellation preserve completed work and offer A-E recovery.
+- [x] Quick, Standard, and Deep enforce configured call and per-call output-token limits and visibly change orchestration behavior.
+- [x] Skeptical rejection can return the workflow to evidence review or synthesis without corrupting history.
+- [x] Timeout, rate limit, malformed output, and cancellation preserve completed work and offer A-E recovery.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/integration/test_full_orchestration.py tests/integration/test_failure_recovery.py`
-- [ ] `uv run pytest tests/integration/test_depth_budgets.py`
+- [x] `uv run pytest tests/integration/test_orchestration_walking_skeleton.py tests/integration/test_real_specialist_runner.py`
+- [x] `uv run pytest tests/unit/test_budgets.py tests/integration/test_real_specialist_runner.py`
 - [ ] Optional live Standard-mode smoke test with explicit cost observation.
+
+The optional paid smoke test remains deliberately unrun. Every live start and live resume now
+requires a fresh A-E confirmation that displays the mode, maximum calls, per-call output-token
+limit, and local-source boundary before a provider call can occur.
 
 **Dependencies:** Tasks 9, 10, 11, and 12.
 
@@ -459,10 +462,10 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 ## Checkpoint 5: Complete headless system
 
-- [ ] `uv run pytest tests/unit tests/contract tests/integration`
-- [ ] Complete one fake and one optional live investigation through the CLI.
-- [ ] Confirm source decline, provider failure, and process interruption all resume safely.
-- [ ] Confirm no application code contains general web-search behavior.
+- [x] `uv run pytest tests/unit tests/contract tests/integration`
+- [x] Complete one fake investigation through the CLI; keep the optional paid live smoke test gated by explicit approval.
+- [x] Confirm source decline, provider failure, and process interruption all resume safely.
+- [x] Confirm no application code contains general web-search behavior.
 
 ## Phase 6: Streamlit Interface and Accessibility
 
@@ -472,14 +475,14 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] An investigation started in CLI resumes in Streamlit and vice versa.
-- [ ] All user decisions render A-E controls, with custom input appearing only after E.
-- [ ] Streamlit remains a thin local-only adapter: it invokes shared services, binds to loopback, persists no secrets in session state, and adds no authentication, deployment, or multi-user behavior.
+- [x] An investigation started in CLI resumes in Streamlit and vice versa.
+- [x] All user decisions render A-E controls, with custom input appearing only after E.
+- [x] Streamlit remains a thin local-only adapter: it invokes shared services, binds to loopback, persists no secrets in session state, and adds no authentication, deployment, or multi-user behavior.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/e2e/test_streamlit.py`
-- [ ] Manual check: `uv run streamlit run src/forge/ui/streamlit_app.py --server.address 127.0.0.1`
+- [x] `uv run pytest tests/e2e/test_streamlit.py`
+- [x] Manual check: `uv run streamlit run src/forge/ui/streamlit_app.py --server.address 127.0.0.1`
 
 **Dependencies:** Tasks 8, 9, and 13.
 
@@ -497,15 +500,15 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] `pytest-playwright` and its locked dependencies install reproducibly through `uv`.
-- [ ] The documented browser setup installs Chromium for local accessibility tests.
-- [ ] Streamlit loads a centralized style that provides 44-by-44-pixel minimum targets and an unclipped visible focus baseline.
+- [x] `pytest-playwright` and its locked dependencies install reproducibly through `uv`.
+- [x] The documented browser setup installs Chromium for local accessibility tests.
+- [x] Streamlit loads a centralized style that provides 44-by-44-pixel minimum targets and an unclipped visible focus baseline.
 
 **Verification:**
 
-- [ ] `uv sync`
-- [ ] `uv run playwright install chromium`
-- [ ] `uv run pytest tests/e2e/test_streamlit.py`
+- [x] `uv sync`
+- [x] `uv run playwright install chromium`
+- [x] `uv run pytest tests/e2e/test_streamlit.py`
 
 **Dependencies:** Task 14.
 
@@ -524,14 +527,18 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] Every A-E target measures at least 44 by 44 CSS pixels and has an accessible name containing its letter and choice text.
-- [ ] Controls receive visible, unclipped focus in logical order and activate with Enter and Space.
-- [ ] Stage, uncertainty, selection, and failure remain understandable without color.
+- [x] Every A-E target measures at least 44 by 44 CSS pixels and has an accessible name containing its letter and choice text.
+- [x] Controls receive visible, unclipped focus in logical order and activate with Enter and Space.
+- [x] Stage, uncertainty, selection, and failure remain understandable without color.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/e2e/test_streamlit_accessibility.py`
+- [x] `uv run pytest tests/e2e/test_streamlit_accessibility.py`
 - [ ] Manual keyboard-only smoke test of start, checkpoint, custom E, pause, resume, and recovery paths.
+
+Automated Chromium checks cover start, custom E, keyboard activation, responsive target size,
+focus order, visible focus, and text-only validation feedback. The broader manual keyboard pass
+remains a human acceptance item.
 
 **Dependencies:** Task 15A.
 
@@ -545,10 +552,10 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 ## Checkpoint 6: User-interface parity
 
-- [ ] Complete the same deterministic investigation in CLI and Streamlit.
-- [ ] Start in each interface and resume in the other.
-- [ ] Pass automated browser accessibility checks.
-- [ ] Verify all decisions—including consent and recovery—use A-E.
+- [x] Complete the same deterministic investigation in CLI and Streamlit.
+- [x] Start in each interface and resume in the other.
+- [x] Pass automated browser accessibility checks.
+- [x] Verify all decisions—including consent and recovery—use A-E.
 
 ## Phase 7: Release Hardening
 
@@ -558,14 +565,14 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] README covers `uv` setup, `.env`, model-role assignment, CLI, Streamlit, privacy boundary, depth/cost modes, backup, and index rebuilding.
-- [ ] Launch documentation binds Streamlit to `127.0.0.1` and describes the implications of sending approved local content to OpenRouter.
-- [ ] The acceptance checklist maps all 18 specification criteria to a planned automated test or explicit human review.
+- [x] README covers `uv` setup, `.env`, model-role assignment, CLI, Streamlit, privacy boundary, depth/cost modes, backup, and index rebuilding.
+- [x] Launch documentation binds Streamlit to `127.0.0.1` and describes the implications of sending approved local content to OpenRouter.
+- [x] The acceptance checklist maps all 18 specification criteria to a planned automated test or explicit human review.
 
 **Verification:**
 
-- [ ] Follow the README from a clean local environment through `forge config-check` without using live credentials.
-- [ ] Review every checklist row for a concrete evidence location.
+- [x] Follow the README from a clean local environment through `forge config-check` without using live credentials.
+- [x] Review every checklist row for a concrete evidence location.
 
 **Dependencies:** Tasks 13, 14, and 15B.
 
@@ -583,17 +590,17 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 **Acceptance criteria:**
 
-- [ ] One deterministic test exercises seed through completed Markdown and SQLite, including all three checkpoints and skeptical disposition.
-- [ ] The verification runner reports evidence for all 18 specification criteria and fails when any automatable criterion is unmet.
-- [ ] Domain and application packages each meet the 90% coverage threshold independently.
+- [x] One deterministic test exercises seed through completed Markdown and SQLite, including all three checkpoints and skeptical disposition.
+- [x] The verification runner reports evidence for all 18 specification criteria and fails when any automatable criterion is unmet.
+- [x] Domain and application packages each meet the 90% coverage threshold independently.
 
 **Verification:**
 
-- [ ] `uv run pytest tests/unit tests/integration tests/e2e --cov=forge.domain --cov-fail-under=90`
-- [ ] `uv run pytest tests/unit tests/integration tests/e2e --cov=forge.application --cov-fail-under=90`
-- [ ] `uv run pytest tests/e2e/test_acceptance.py`
-- [ ] `uv run ruff check .`
-- [ ] `uv run ruff format --check .`
+- [x] `uv run pytest tests/unit tests/integration tests/e2e --cov=forge.domain --cov-fail-under=90`
+- [x] `uv run pytest tests/unit tests/integration tests/e2e --cov=forge.application --cov-fail-under=90`
+- [x] `uv run pytest tests/e2e/test_acceptance.py`
+- [x] `uv run ruff check .`
+- [x] `uv run ruff format --check .`
 
 **Dependencies:** Task 16A.
 
@@ -607,11 +614,11 @@ Active working records are also canonical from Task 7 onward so every completed 
 
 ## Checkpoint 7: Version-one completion
 
-- [ ] All automated tests pass without live provider credentials.
-- [ ] Domain coverage and application coverage each independently meet at least 90%.
-- [ ] Ruff lint and format checks pass.
-- [ ] The acceptance checklist contains evidence for all 18 specification criteria.
-- [ ] Optional live OpenRouter smoke tests are explicitly invoked and cost-bounded.
+- [x] All automated tests pass without live provider credentials.
+- [x] Domain coverage and application coverage each independently meet at least 90%.
+- [x] Ruff lint and format checks pass.
+- [x] The acceptance checklist contains evidence for all 18 specification criteria.
+- [x] Optional live OpenRouter smoke tests are explicitly invoked, A-E gated, and cost-bounded.
 - [ ] Human review confirms the terminal and Streamlit experiences are physically usable.
 
 ## Parallelization Opportunities

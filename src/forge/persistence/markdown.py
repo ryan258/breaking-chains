@@ -130,6 +130,7 @@ def render_record(record: InvestigationRecord) -> str:
         f"- **Created:** {record.workflow.created_at.isoformat()}",
         f"- **Updated:** {record.workflow.updated_at.isoformat()}",
         f"- **Selected focus:** {_markdown_text(record.selected_focus or 'Not selected yet')}",
+        "- **Prior investigations:** " + (", ".join(record.prior_investigation_ids) or "None"),
         "",
         "## Local source references",
         "",
@@ -246,9 +247,12 @@ def _source_lines(record: InvestigationRecord) -> list[str]:
     if not record.source_references:
         return ["- None recorded."]
     return [
-        f"- **Path:** {_markdown_text(source.path)} — **SHA-256:** {source.sha256}"
-        + (f" — **Location:** {_markdown_text(source.locator)}" if source.locator else "")
-        for source in record.source_references
+        "- **Transmission approved:** " + ("yes" if record.source_transmission_approved else "no"),
+        *[
+            f"- **Path:** {_markdown_text(source.path)} — **SHA-256:** {source.sha256}"
+            + (f" — **Location:** {_markdown_text(source.locator)}" if source.locator else "")
+            for source in record.source_references
+        ],
     ]
 
 
@@ -266,14 +270,23 @@ def _action_lines(record: InvestigationRecord) -> list[str]:
     action = record.selected_action
     if action is None:
         return ["- None selected."]
-    return [
+    lines = [
         f"- **Action:** {_markdown_text(action.statement)}",
-        f"- **Expected:** {_markdown_text(action.expected_observation)}",
-        f"- **Disconfirming:** {_markdown_text(action.disconfirming_observation)}",
-        f"- **Cost:** {_markdown_text(action.cost)}",
-        f"- **Risk:** {_markdown_text(action.risk)}",
-        f"- **Stop when:** {_markdown_text(action.stopping_condition)}",
     ]
+    if action.procedure is not None:
+        lines.append(f"- **Procedure:** {_markdown_text(action.procedure)}")
+    lines.extend(
+        [
+            f"- **Expected:** {_markdown_text(action.expected_observation)}",
+            f"- **Disconfirming:** {_markdown_text(action.disconfirming_observation)}",
+            f"- **Cost:** {_markdown_text(action.cost)}",
+            f"- **Risk:** {_markdown_text(action.risk)}",
+            f"- **Stop when:** {_markdown_text(action.stopping_condition)}",
+        ]
+    )
+    if action.reproducibility_needs is not None:
+        lines.append(f"- **Reproducibility:** {_markdown_text(action.reproducibility_needs)}")
+    return lines
 
 
 def _decision_lines(record: InvestigationRecord) -> list[str]:

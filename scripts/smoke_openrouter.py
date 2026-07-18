@@ -5,15 +5,45 @@ from __future__ import annotations
 import asyncio
 import os
 
+from forge.application.budgets import DepthBudget, live_run_confirmation_prompt
+from forge.application.decisions import ChoiceLetter, submit_decision
 from forge.config import load_settings
 from forge.domain.identifiers import new_call_id
+from forge.domain.investigation import DepthMode
 from forge.gateways.model import ModelMessage, ModelRequest, ModelRole
 from forge.gateways.openrouter import OpenRouterGateway
 from forge.observability.trace import TraceWriter
 from forge.smoke_report import render_smoke_report
 
 
+def confirm_live_smoke() -> bool:
+    """Require a visible A-E approval for the one-call paid smoke boundary."""
+
+    prompt = live_run_confirmation_prompt(
+        investigation_id="inv_smoke_openrouter",
+        depth=DepthMode.QUICK,
+        budget=DepthBudget(max_calls=1, max_output_tokens_per_call=500),
+        source_attached=False,
+    )
+    while True:
+        print(prompt.question)
+        for option in prompt.options:
+            marker = " (recommended)" if option.is_recommended else ""
+            print(f"  {option.letter.value}. {option.label}{marker}")
+        raw = input("Choose A-E: ")
+        custom = input("Custom answer: ") if raw.strip().upper() == ChoiceLetter.E else None
+        attempt = submit_decision(prompt, raw, custom_answer=custom)
+        if attempt.error is not None:
+            print(attempt.error)
+            continue
+        assert attempt.selection is not None
+        return attempt.selection.letter is ChoiceLetter.A
+
+
 async def run() -> int:
+    if not confirm_live_smoke():
+        print("No provider call was made.")
+        return 0
     settings = load_settings()
     investigation_id = "inv_smoke_openrouter"
     call_id = new_call_id()

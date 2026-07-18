@@ -1,0 +1,31 @@
+:root {
+  --forge-focus: #0b5fff;
+  --forge-border: #40566f;
+}
+
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button,
+button[kind="formSubmit"] {
+  min-width: 44px;
+  min-height: 44px;
+  border-color: var(--forge-border);
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[role="combobox"]:focus-visible {
+  outline: 3px solid var(--forge-focus) !important;
+  outline-offset: 2px !important;
+  box-shadow: none !important;
+}
+
+div[data-testid="stHorizontalBlock"] {
+  overflow: visible;
+}
+
+@media (max-width: 640px) {
+  [data-testid="stButton"] button {
+    padding-inline: 0.5rem;
+  }
+}

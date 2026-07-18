@@ -74,7 +74,9 @@ LEGAL_TRANSITIONS: dict[WorkflowStage, frozenset[WorkflowStage]] = {
     WorkflowStage.PREMISES_EXTRACTED: frozenset({WorkflowStage.EVIDENCE_CHECKPOINT}),
     WorkflowStage.EVIDENCE_CHECKPOINT: frozenset({WorkflowStage.CONNECTIONS_GENERATED}),
     WorkflowStage.CONNECTIONS_GENERATED: frozenset({WorkflowStage.HYPOTHESES_SYNTHESIZED}),
-    WorkflowStage.HYPOTHESES_SYNTHESIZED: frozenset({WorkflowStage.STRESS_TESTED}),
+    WorkflowStage.HYPOTHESES_SYNTHESIZED: frozenset(
+        {WorkflowStage.STRESS_TESTED, WorkflowStage.EVIDENCE_CHECKPOINT}
+    ),
     WorkflowStage.STRESS_TESTED: frozenset({WorkflowStage.ACTIONS_DESIGNED}),
     WorkflowStage.ACTIONS_DESIGNED: frozenset({WorkflowStage.ACTION_CHECKPOINT}),
     WorkflowStage.ACTION_CHECKPOINT: frozenset({WorkflowStage.COMPLETED}),

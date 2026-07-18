@@ -1,6 +1,6 @@
 """Deterministic typed specialist contributions for orchestration tests."""
 
-from forge.application.orchestrator import SpecialistContribution
+from forge.application.orchestrator import SpecialistContribution, _decision_prompt
 from forge.domain.epistemics import (
     Confidence,
     ConfidenceLevel,
@@ -11,6 +11,7 @@ from forge.domain.epistemics import (
     Premise,
     Provenance,
 )
+from forge.domain.investigation import WorkflowStage
 from forge.gateways.model import ModelRole
 from forge.persistence.metadata import (
     ActionProposal,
@@ -34,6 +35,10 @@ class DeterministicSpecialistRunner:
             level=ConfidenceLevel.MEDIUM,
             rationale="Deterministic walking-skeleton output requiring later verification.",
         )
+        if role is ModelRole.LEAD:
+            return SpecialistContribution(
+                decision_prompt=_decision_prompt(record.id, WorkflowStage.FOCUS_CHECKPOINT)
+            )
         if role is ModelRole.RESEARCHER:
             return SpecialistContribution(
                 epistemic_items=(

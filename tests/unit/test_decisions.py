@@ -7,7 +7,9 @@ from forge.application.decisions import (
     DecisionKind,
     DecisionOption,
     DecisionPrompt,
+    depth_mode_prompt,
     normalize_choice,
+    pause_resume_prompt,
     submit_decision,
 )
 
@@ -150,3 +152,14 @@ def test_prompt_requires_one_recommended_choice() -> None:
 
     with pytest.raises(ValidationError, match="exactly one recommended option"):
         DecisionPrompt.model_validate(prompt_data)
+
+
+def test_mode_and_resume_prompts_preserve_the_ae_contract() -> None:
+    mode = depth_mode_prompt(default_depth="standard")
+    resume = pause_resume_prompt(investigation_id="inv_resume")
+
+    assert mode.kind is DecisionKind.MODE
+    assert [option.letter for option in mode.options] == list(ChoiceLetter)
+    assert mode.options[1].is_recommended is True
+    assert resume.kind is DecisionKind.PAUSE_RESUME
+    assert resume.options[0].is_recommended is True

@@ -27,6 +27,8 @@ class DecisionKind(StrEnum):
     """Every workflow decision that must use the A-E contract."""
 
     MODE = "mode"
+    LIVE_CONFIRMATION = "live_confirmation"
+    BUDGET_EXHAUSTED = "budget_exhausted"
     SOURCE_CONSENT = "source_consent"
     FOCUS_CHECKPOINT = "focus_checkpoint"
     EVIDENCE_CHECKPOINT = "evidence_checkpoint"
@@ -127,12 +129,86 @@ def submit_decision(
     )
 
 
+def depth_mode_prompt(*, default_depth: str) -> DecisionPrompt:
+    """Offer low-effort depth selection before an interactive investigation starts."""
+
+    modes = ((ChoiceLetter.A, "Quick"), (ChoiceLetter.B, "Standard"), (ChoiceLetter.C, "Deep"))
+    return DecisionPrompt(
+        id="new-investigation-mode-v1",
+        kind=DecisionKind.MODE,
+        question="How deep should this investigation go?",
+        options=(
+            *(
+                DecisionOption(
+                    letter=letter,
+                    label=label,
+                    description=f"Use the configured {label.lower()} call and token limits.",
+                    is_recommended=label.lower() == default_depth,
+                )
+                for letter, label in modes
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.D,
+                label="Stop before starting",
+                description="Return without creating an investigation.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.E,
+                label="Custom answer",
+                description="Name Quick, Standard, or Deep and add any desired detail.",
+                accepts_custom_input=True,
+            ),
+        ),
+    )
+
+
+def pause_resume_prompt(*, investigation_id: str) -> DecisionPrompt:
+    """Require an A-E choice before a deterministic saved run resumes."""
+
+    return DecisionPrompt(
+        id=f"{investigation_id}-pause-resume-v1",
+        kind=DecisionKind.PAUSE_RESUME,
+        question="Resume this saved investigation?",
+        options=(
+            DecisionOption(
+                letter=ChoiceLetter.A,
+                label="Resume from saved work",
+                description="Continue from the first unfinished stage.",
+                is_recommended=True,
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.B,
+                label="Keep paused",
+                description="Leave the canonical record unchanged.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.C,
+                label="Review saved record",
+                description="Stop so the Markdown record can be reviewed first.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.D,
+                label="Return without resuming",
+                description="Make no workflow changes.",
+            ),
+            DecisionOption(
+                letter=ChoiceLetter.E,
+                label="Custom answer",
+                description="Add detail without resuming automatically.",
+                accepts_custom_input=True,
+            ),
+        ),
+    )
+
+
 __all__ = [
     "ChoiceLetter",
     "DecisionAttempt",
     "DecisionKind",
     "DecisionOption",
     "DecisionPrompt",
+    "depth_mode_prompt",
     "normalize_choice",
+    "pause_resume_prompt",
     "submit_decision",
 ]

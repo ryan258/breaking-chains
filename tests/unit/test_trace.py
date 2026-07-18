@@ -47,6 +47,29 @@ def test_writes_metadata_only_log_and_sanitized_full_artifact(tmp_path: Path) ->
     assert "super-secret-key" not in serialized_log
 
 
+@pytest.mark.parametrize(
+    "sensitive_key",
+    ["access_token", "refresh_token", "id_token", "client_secret"],
+)
+def test_redacts_compound_sensitive_keys(tmp_path: Path, sensitive_key: str) -> None:
+    writer = TraceWriter(log_root=tmp_path / "logs", output_root=tmp_path / "outputs")
+
+    artifact_path = writer.record_model_call(
+        investigation_id="inv_test",
+        call_id="call_compound_secret",
+        event="model_call_failed",
+        metadata={sensitive_key: "metadata-secret"},
+        request={sensitive_key: "request-secret"},
+        response={sensitive_key: "response-secret"},
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    event = json.loads((tmp_path / "logs/forge.jsonl").read_text(encoding="utf-8"))
+    assert artifact["request"][sensitive_key] == "[REDACTED]"
+    assert artifact["response"][sensitive_key] == "[REDACTED]"
+    assert event[sensitive_key] == "[REDACTED]"
+
+
 def test_rejects_artifact_path_escape_and_uses_private_directories(tmp_path: Path) -> None:
     writer = TraceWriter(log_root=tmp_path / "logs", output_root=tmp_path / "outputs")
 

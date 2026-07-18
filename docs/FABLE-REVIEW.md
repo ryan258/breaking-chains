@@ -2,7 +2,7 @@
 
 Reviewed 2026-07-17 at commit `b72ed22`. Scope: all of `src/`, `scripts/`, `tests/`, config, and build metadata. Baseline: 117 tests pass, `ruff check` clean.
 
-> **Status update, 2026-07-17 (later the same day):** Findings 1 (defer/resume bug), 2 (unit-of-work rollback), and 4 (dead statement index) are fixed; the simplifications in finding 5 for shared text types and derived environment names are done; enhancement 1 (CLI entry point, `uv run forge`) is built with e2e tests. Findings 3 (budget enforcement — deliberately deferred until real specialists are wired in) and the remaining items (CI, README, smoke-script helper, lock busy-wait, prompt copy) are still open.
+> **Status update, 2026-07-17 (release pass):** Findings 1-4 are fixed, including live depth-budget enforcement and A-E recovery. The shared-text and environment-name simplifications are complete. CLI and Streamlit adapters, README/operator guidance, deterministic acceptance reporting, browser accessibility checks, and CI are now built. A subsequent whole-project audit also closed dangling local epistemic references, compound secret-key redaction, declined-consent isolation, and the source-consent prompt copy. The remaining review follow-ups are the smoke-script private-write helper and lock backoff optimization; neither blocks version-one acceptance.
 
 ## Verdict
 

@@ -21,6 +21,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
+    "pytest-playwright",
     "ruff",
 ]
 
@@ -32,7 +33,7 @@ build-backend = "hatchling.build"
 packages = ["src/forge"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -p no:playwright"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 

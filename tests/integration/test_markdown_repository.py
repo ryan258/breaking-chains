@@ -5,12 +5,14 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+from forge.application.budgets import DepthBudget, live_run_confirmation_prompt
 from forge.application.decisions import (
     ChoiceLetter,
     DecisionAttempt,
     DecisionKind,
     DecisionOption,
     DecisionPrompt,
+    submit_decision,
 )
 from forge.domain.epistemics import (
     Confidence,
@@ -26,6 +28,7 @@ from forge.domain.epistemics import (
     Provenance,
 )
 from forge.domain.investigation import DepthMode, InvestigationWorkflow, WorkflowStage
+from forge.gateways.model import ModelReceipt, ModelRole, ModelUsage
 from forge.persistence.markdown import (
     MarkdownInvestigationRepository,
     RecordFormatError,
@@ -157,7 +160,22 @@ def investigation_record() -> InvestigationRecord:
 
 def test_record_round_trips_without_losing_domain_content(tmp_path: Path) -> None:
     repository = MarkdownInvestigationRepository(tmp_path)
-    original = investigation_record()
+    base = investigation_record()
+    assert base.selected_action is not None
+    original = base.model_copy(
+        update={
+            "selected_action": base.selected_action.model_copy(
+                update={
+                    "procedure": (
+                        "Calibrate once, then alternate the two controlled temperatures."
+                    ),
+                    "reproducibility_needs": (
+                        "Record calibration and temperature for every reading."
+                    ),
+                }
+            )
+        }
+    )
 
     path = repository.save(original)
     restored = repository.load(original.id)
@@ -167,6 +185,53 @@ def test_record_round_trips_without_losing_domain_content(tmp_path: Path) -> Non
     assert restored.epistemic_items[2].links == original.epistemic_items[2].links
     assert restored.workflow.history == original.workflow.history
     assert restored.decisions == original.decisions
+
+    rendered = path.read_text(encoding="utf-8")
+    assert "**Procedure:** Calibrate once" in rendered
+    assert "**Reproducibility:** Record calibration" in rendered
+
+
+def test_live_approval_and_model_receipt_round_trip_canonically(tmp_path: Path) -> None:
+    record = investigation_record()
+    prompt = live_run_confirmation_prompt(
+        investigation_id=record.id,
+        depth=record.workflow.depth,
+        budget=DepthBudget(max_calls=10, max_output_tokens_per_call=2400),
+        source_attached=True,
+    )
+    approval = submit_decision(prompt, "A")
+    receipt = ModelReceipt(
+        role=ModelRole.RESEARCHER,
+        model="vendor/researcher-model",
+        started_at=STARTED,
+        finished_at=STARTED + timedelta(seconds=1),
+        duration_ms=1000,
+        attempts=1,
+        usage=ModelUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15, cost=0.01),
+        prompt_contract_version="researcher-epistemics-v1",
+        artifact_path=Path("outputs/model-calls/inv_mass_question/call_01.json"),
+    )
+    live_record = record.model_copy(
+        update={
+            "decisions": (*record.decisions, approval),
+            "live_execution_approved": True,
+            "model_receipts": (receipt,),
+        }
+    )
+
+    repository = MarkdownInvestigationRepository(tmp_path)
+    repository.save(live_record)
+
+    restored = repository.load(live_record.id)
+    assert restored.live_execution_approved is True
+    assert restored.model_receipts == (receipt,)
+
+
+def test_record_rejects_live_approval_without_recorded_a_decision() -> None:
+    record = investigation_record().model_copy(update={"live_execution_approved": True})
+
+    with pytest.raises(ValidationError, match="live execution requires"):
+        InvestigationRecord.model_validate(record.model_dump(mode="python"))
 
 
 def test_generated_markdown_is_readable_and_keeps_categories_visible(tmp_path: Path) -> None:
@@ -263,6 +328,51 @@ def test_record_rejects_explicitly_qualified_self_link() -> None:
     )
 
     with pytest.raises(ValidationError, match="cannot link to itself"):
+        InvestigationRecord.model_validate(invalid_record.model_dump(mode="python"))
+
+
+def test_record_rejects_dangling_derived_claim_dependency() -> None:
+    record = investigation_record()
+    claim = record.epistemic_items[2]
+    assert isinstance(claim, DerivedClaim)
+    dangling_claim = claim.model_copy(update={"dependencies": ("epi_missing_dependency",)})
+    invalid_record = record.model_copy(
+        update={
+            "epistemic_items": (
+                *record.epistemic_items[:2],
+                dangling_claim,
+                record.epistemic_items[3],
+            )
+        }
+    )
+
+    with pytest.raises(ValidationError, match="unknown local epistemic item"):
+        InvestigationRecord.model_validate(invalid_record.model_dump(mode="python"))
+
+
+def test_record_rejects_dangling_exploratory_basis() -> None:
+    record = investigation_record()
+    hypothesis = record.epistemic_items[3]
+    assert isinstance(hypothesis, ExploratoryItem)
+    dangling_hypothesis = hypothesis.model_copy(update={"based_on": ("epi_missing_basis",)})
+    invalid_record = record.model_copy(
+        update={"epistemic_items": (*record.epistemic_items[:3], dangling_hypothesis)}
+    )
+
+    with pytest.raises(ValidationError, match="unknown local epistemic item"):
+        InvestigationRecord.model_validate(invalid_record.model_dump(mode="python"))
+
+
+def test_record_rejects_dangling_same_investigation_link() -> None:
+    record = investigation_record()
+    premise = record.epistemic_items[0]
+    dangling_link = EpistemicLink(kind=LinkKind.SUPPORTS, target_id="epi_missing_target")
+    linked_premise = premise.model_copy(update={"links": (dangling_link,)})
+    invalid_record = record.model_copy(
+        update={"epistemic_items": (linked_premise, *record.epistemic_items[1:])}
+    )
+
+    with pytest.raises(ValidationError, match="unknown local epistemic item"):
         InvestigationRecord.model_validate(invalid_record.model_dump(mode="python"))
 
 

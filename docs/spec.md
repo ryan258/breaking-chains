@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 1 specification for human review. No application code should be written until this document is approved.
+Approved living Phase 1 specification. Implementation is in progress; behavioral changes must be reflected here before they are built.
 
 ## Objective
 
