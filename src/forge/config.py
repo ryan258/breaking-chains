@@ -18,26 +18,12 @@ from forge.domain.investigation import DepthMode
 
 ModelIdentifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
-_ENVIRONMENT_NAMES = {
-    "openrouter_api_key": "OPENROUTER_API_KEY",
-    "openrouter_base_url": "FORGE_OPENROUTER_BASE_URL",
-    "model_lead": "FORGE_MODEL_LEAD",
-    "model_researcher": "FORGE_MODEL_RESEARCHER",
-    "model_connection_finder": "FORGE_MODEL_CONNECTION_FINDER",
-    "model_synthesizer": "FORGE_MODEL_SYNTHESIZER",
-    "model_skeptic": "FORGE_MODEL_SKEPTIC",
-    "model_experiment_designer": "FORGE_MODEL_EXPERIMENT_DESIGNER",
-    "default_depth": "FORGE_DEFAULT_DEPTH",
-    "data_dir": "FORGE_DATA_DIR",
-    "output_dir": "FORGE_OUTPUT_DIR",
-    "log_dir": "FORGE_LOG_DIR",
-    "quick_max_calls": "FORGE_QUICK_MAX_CALLS",
-    "standard_max_calls": "FORGE_STANDARD_MAX_CALLS",
-    "deep_max_calls": "FORGE_DEEP_MAX_CALLS",
-    "quick_max_output_tokens_per_call": "FORGE_QUICK_MAX_OUTPUT_TOKENS_PER_CALL",
-    "standard_max_output_tokens_per_call": "FORGE_STANDARD_MAX_OUTPUT_TOKENS_PER_CALL",
-    "deep_max_output_tokens_per_call": "FORGE_DEEP_MAX_OUTPUT_TOKENS_PER_CALL",
-}
+
+def _environment_name(field_name: str) -> str:
+    # The API key is the only setting without the FORGE_ prefix.
+    if field_name == "openrouter_api_key":
+        return "OPENROUTER_API_KEY"
+    return f"FORGE_{field_name.upper()}"
 
 
 class ForgeSettings(BaseSettings):
@@ -114,6 +100,6 @@ def load_settings(env_file: str | Path | None = ".env") -> ForgeSettings:
 def _format_problem(error: dict[str, object]) -> str:
     location = error.get("loc", ())
     field_name = str(location[0]) if isinstance(location, tuple) and location else "configuration"
-    environment_name = _ENVIRONMENT_NAMES.get(field_name, field_name.upper())
+    environment_name = _environment_name(field_name)
     message = str(error.get("msg", "is invalid"))
     return f"{environment_name}: {message}"

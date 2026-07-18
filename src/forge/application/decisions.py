@@ -1,12 +1,10 @@
 """Shared A-E decision contract for every user interface."""
 
 from enum import StrEnum
-from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-OptionalText = NonEmptyText | None
+from forge.domain.epistemics import NonEmptyText, OptionalText
 
 
 class DecisionModel(BaseModel):

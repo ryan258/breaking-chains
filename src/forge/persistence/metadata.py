@@ -6,12 +6,10 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator, model_validator
 
 from forge.application.decisions import DecisionAttempt, DecisionKind, DecisionPrompt
-from forge.domain.epistemics import EpistemicItem
+from forge.domain.epistemics import EpistemicItem, NonEmptyText, OptionalText
 from forge.domain.identifiers import EpistemicItemId, InvestigationId
 from forge.domain.investigation import InvestigationWorkflow, WorkflowStage
 
-NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-OptionalText = NonEmptyText | None
 Sha256Digest = Annotated[
     str,
     StringConstraints(to_lower=True, pattern=r"^[a-f0-9]{64}$"),

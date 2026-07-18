@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS relationships (
 
 CREATE INDEX IF NOT EXISTS idx_items_category
     ON epistemic_items(category);
-CREATE INDEX IF NOT EXISTS idx_items_statement
-    ON epistemic_items(statement);
+-- A leading-wildcard LIKE search can never use a statement B-tree index.
+DROP INDEX IF EXISTS idx_items_statement;
 CREATE INDEX IF NOT EXISTS idx_relationship_target
     ON relationships(target_id);
 """
