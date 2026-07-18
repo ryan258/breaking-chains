@@ -147,11 +147,17 @@ def test_only_e_can_accept_custom_input_and_e_must_accept_it() -> None:
         DecisionPrompt.model_validate(prompt_data)
 
 
-def test_prompt_requires_one_recommended_choice() -> None:
+def test_prompt_allows_at_most_one_recommended_choice() -> None:
     prompt_data = decision_prompt().model_dump()
     prompt_data["options"][0]["is_recommended"] = False
 
-    with pytest.raises(ValidationError, match="exactly one recommended option"):
+    unrecommended = DecisionPrompt.model_validate(prompt_data)
+    assert not any(option.is_recommended for option in unrecommended.options)
+
+    prompt_data["options"][0]["is_recommended"] = True
+    prompt_data["options"][1]["is_recommended"] = True
+
+    with pytest.raises(ValidationError, match="at most one recommended option"):
         DecisionPrompt.model_validate(prompt_data)
 
 

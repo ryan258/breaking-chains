@@ -559,42 +559,92 @@ class InvestigationOrchestrator:
             os.close(descriptor)
 
 
+# Checkpoint copy: (question, options as (label, description), recommended letter or None).
+# Descriptions state what actually happens next; a recommendation appears only
+# where one choice is the defensible default rather than a real judgment call.
+_CHECKPOINT_COPY: dict[
+    WorkflowStage,
+    tuple[str, tuple[tuple[str, str], ...], ChoiceLetter | None],
+] = {
+    WorkflowStage.SOURCE_CONSENT: (
+        "May this local source be sent to the configured OpenRouter role models?",
+        (
+            ("Approve transmission", "Send the source text to the role models with the seed."),
+            (
+                "Continue without source",
+                "Investigate without it; nothing from the source leaves this machine.",
+            ),
+            (
+                "Use manual evidence",
+                "Keep the source local and record it as evidence to review by hand.",
+            ),
+            (
+                "Pause before deciding",
+                "Save everything and stop; this question is asked again on resume.",
+            ),
+            ("Custom answer", "Record a concern or instruction; the source is not transmitted."),
+        ),
+        None,
+    ),
+    WorkflowStage.FOCUS_CHECKPOINT: (
+        "Which focus should guide this investigation?",
+        (
+            ("Trace constraints", "Follow what physically or logically limits the system."),
+            ("Challenge assumptions", "Probe the premises that are easiest to take for granted."),
+            ("Seek connections", "Look for structure shared with better-understood problems."),
+            ("Keep broad", "Defer narrowing until premises and evidence are on the table."),
+            ("Custom answer", "State the focus in your own words; it becomes the recorded focus."),
+        ),
+        None,
+    ),
+    WorkflowStage.EVIDENCE_CHECKPOINT: (
+        "How should we proceed with these premises and evidence?",
+        (
+            ("Accept", "Treat the premises and evidence above as the working base and continue."),
+            (
+                "Emphasize uncertainty",
+                "Continue, recording that the low-confidence items deserve extra weight.",
+            ),
+            (
+                "Proceed cautiously",
+                "Continue, recording that every later claim should be read as provisional.",
+            ),
+            ("Pause here", "Save the record and stop; resuming continues from this point."),
+            (
+                "Custom answer",
+                "Add a question or caveat to the record; the investigation continues.",
+            ),
+        ),
+        ChoiceLetter.A,
+    ),
+    WorkflowStage.ACTION_CHECKPOINT: (
+        "What should we do with the proposed test or action?",
+        (
+            ("Accept action", "Adopt this proposal as the investigation's outcome and finish."),
+            ("Defer action", "Pause with the action undecided; resume asks this question again."),
+            ("Reject action", "Discard the proposal and finish without a selected action."),
+            ("Pause here", "Save everything and stop; resume returns to this question."),
+            ("Custom answer", "Rewrite the action in your own words and finish with it."),
+        ),
+        ChoiceLetter.A,
+    ),
+}
+
+
 def _decision_prompt(investigation_id: str, stage: WorkflowStage) -> DecisionPrompt:
     kind = InvestigationOrchestrator._expected_decision_kind(stage)
     if kind is None:
         raise ValueError("only checkpoint stages have decision prompts")
-    question, labels = {
-        WorkflowStage.SOURCE_CONSENT: (
-            "May this local source be sent to the configured OpenRouter role models?",
-            (
-                "Approve transmission",
-                "Continue without source",
-                "Use manual evidence",
-                "Pause before deciding",
-            ),
-        ),
-        WorkflowStage.FOCUS_CHECKPOINT: (
-            "Which focus should guide this investigation?",
-            ("Trace constraints", "Challenge assumptions", "Seek connections", "Keep broad"),
-        ),
-        WorkflowStage.EVIDENCE_CHECKPOINT: (
-            "How should we proceed with these premises and evidence?",
-            ("Accept", "Emphasize uncertainty", "Proceed cautiously", "Pause here"),
-        ),
-        WorkflowStage.ACTION_CHECKPOINT: (
-            "What should we do with the proposed test or action?",
-            ("Accept action", "Defer action", "Reject action", "Pause here"),
-        ),
-    }[stage]
+    question, copy, recommended = _CHECKPOINT_COPY[stage]
     options = tuple(
         DecisionOption(
             letter=letter,
             label=label,
-            description=f"{label} for the next step.",
-            is_recommended=letter is ChoiceLetter.A,
+            description=description,
+            is_recommended=letter is recommended,
             accepts_custom_input=letter is ChoiceLetter.E,
         )
-        for letter, label in zip(ChoiceLetter, (*labels, "Custom answer"), strict=True)
+        for letter, (label, description) in zip(ChoiceLetter, copy, strict=True)
     )
     return DecisionPrompt(
         id=f"{investigation_id}-{kind.value}-v1",

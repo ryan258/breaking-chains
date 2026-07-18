@@ -63,8 +63,8 @@ class DecisionPrompt(DecisionModel):
             raise ValueError("only option E may accept custom input")
         if not self.options[-1].accepts_custom_input:
             raise ValueError("option E must accept custom input")
-        if sum(option.is_recommended for option in self.options) != 1:
-            raise ValueError("a decision must have exactly one recommended option")
+        if sum(option.is_recommended for option in self.options) > 1:
+            raise ValueError("a decision may have at most one recommended option")
         return self
 
 
