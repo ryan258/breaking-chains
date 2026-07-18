@@ -15,6 +15,7 @@ from forge.domain.epistemics import (
     Premise,
     PrimarySourceDetails,
     Provenance,
+    group_epistemic_items,
     new_epistemic_item_id,
     parse_epistemic_item,
 )
@@ -31,6 +32,32 @@ def test_generates_unique_stable_epistemic_item_identifiers() -> None:
     assert first.startswith("epi_")
     assert second.startswith("epi_")
     assert first != second
+
+
+def test_epistemic_items_are_grouped_once_by_their_validated_category() -> None:
+    premise = Premise(
+        id="epi_grouped_premise",
+        statement="The boundary is fixed.",
+        uncertainty=medium_confidence(),
+        origin="Investigation setup",
+    )
+    evidence = Evidence(
+        id="epi_grouped_evidence",
+        statement="The boundary did not move during observation.",
+        uncertainty=medium_confidence(),
+        provenance=Provenance(origin="Local notebook"),
+        details=DirectObservationDetails(
+            observer="Analyst",
+            conditions="Ten-minute observation",
+        ),
+    )
+
+    groups = group_epistemic_items((evidence, premise))
+
+    assert groups.premises == (premise,)
+    assert groups.evidence == (evidence,)
+    assert groups.claims == ()
+    assert groups.exploratory == ()
 
 
 def test_premise_stays_distinct_from_evidence_at_high_confidence() -> None:

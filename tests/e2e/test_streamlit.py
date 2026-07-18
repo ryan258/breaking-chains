@@ -11,6 +11,7 @@ from forge.domain.investigation import DepthMode, InvestigationWorkflow, Workflo
 from forge.gateways.model import FailureKind, ModelReceipt, ModelRole, ModelUsage
 from forge.persistence.markdown import MarkdownInvestigationRepository
 from forge.persistence.metadata import InvestigationRecord
+from forge.ui.view_models import markdown_heading_text
 
 
 @pytest.fixture
@@ -37,13 +38,103 @@ def app_test() -> AppTest:
     return AppTest.from_file(app_path, default_timeout=5)
 
 
-def test_streamlit_completes_deterministic_investigation_with_ae_controls(
+def test_streamlit_home_uses_the_case_file_design_language(
     streamlit_environment: Path,
 ) -> None:
     at = app_test().run()
 
+    assert at.title[0].value == "First-Principles Forge"
+    assert "Start a case" in [heading.value for heading in at.header]
+    assert at.text_area(key="seed").label == "What are you investigating?"
+    assert at.button(key="prepare_start").label == "Open case"
+    assert "Case archive" in [heading.value for heading in at.header]
+    assert any("careful reasoning" in caption.value.lower() for caption in at.caption)
     assert not at.exception
-    at.text_area(key="seed").input("Why does the kettle whistle?")
+
+
+def test_streamlit_home_surfaces_recent_cases_as_openable_case_cards(
+    streamlit_environment: Path,
+) -> None:
+    older_record = InvestigationRecord(
+        id="inv_a_older_case_card",
+        seed="An older case should appear second.",
+        workflow=InvestigationWorkflow.start(
+            depth=DepthMode.QUICK,
+            at=datetime(2026, 7, 17, tzinfo=UTC),
+        ),
+    )
+    record = InvestigationRecord(
+        id="inv_z_recent_case_card",
+        seed="Why do **recurring** patterns cost $5?\nSecond line",
+        workflow=InvestigationWorkflow.start(
+            depth=DepthMode.QUICK,
+            at=datetime(2026, 7, 18, tzinfo=UTC),
+        ),
+    )
+    case_repository = MarkdownInvestigationRepository(
+        streamlit_environment / "outputs/investigations"
+    )
+    case_repository.save(older_record)
+    case_repository.save(record)
+
+    at = app_test().run()
+
+    assert "Your case files" in [heading.value for heading in at.subheader]
+    recent_button_key = f"open_case_card_{record.id}"
+    assert at.button(key=recent_button_key).label == "View case file"
+    expected_titles = {
+        markdown_heading_text(record.seed),
+        markdown_heading_text(older_record.seed),
+    }
+    assert any(
+        expected_titles & set(markdown.value.removeprefix("### ") for markdown in at.markdown)
+    )
+    card_titles = [
+        markdown.value.removeprefix("### ")
+        for markdown in at.markdown
+        if markdown.value.removeprefix("### ") in expected_titles
+    ]
+    assert card_titles == [
+        markdown_heading_text(record.seed),
+        markdown_heading_text(older_record.seed),
+    ]
+
+    at.button(key=recent_button_key).click().run()
+
+    assert at.button(key="decision_A").label == "A — Resume from saved work"
+    assert not at.exception
+
+
+def test_streamlit_home_loads_the_case_archive_once_per_rerun(
+    streamlit_environment: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+    original = MarkdownInvestigationRepository.list_records
+
+    def counted_list_records(
+        case_repository: MarkdownInvestigationRepository,
+    ) -> tuple[InvestigationRecord, ...]:
+        nonlocal calls
+        calls += 1
+        return original(case_repository)
+
+    monkeypatch.setattr(MarkdownInvestigationRepository, "list_records", counted_list_records)
+
+    at = app_test().run()
+
+    assert calls == 1
+    assert not at.exception
+
+
+def test_streamlit_completes_deterministic_investigation_with_ae_controls(
+    streamlit_environment: Path,
+) -> None:
+    seed = "Why does the **kettle** whistle for $5?\nSecond line"
+    at = app_test().run()
+
+    assert not at.exception
+    at.text_area(key="seed").input(seed)
     at.button(key="prepare_start").click().run()
     at.button(key="decision_A").click().run()
 
@@ -71,7 +162,8 @@ def test_streamlit_completes_deterministic_investigation_with_ae_controls(
     assert records[0].decisions[0].selection.letter.value == "A"
     assert records[0].decisions[1].selection.letter.value == "D"
     assert at.expander[-1].label == "View saved Markdown record"
-    assert at.code[-1].value.startswith("# Investigation: Why does the kettle whistle?")
+    assert f"### {markdown_heading_text(seed)}" in [markdown.value for markdown in at.markdown]
+    assert at.code[-1].value.startswith("# Investigation: Why does the **kettle** whistle for $5?")
     assert at.selectbox(key="export_format").options == ["Markdown", "HTML", "Plain text"]
     at.selectbox(key="export_format").select("HTML").run()
     assert at.selectbox(key="export_format").value == "HTML"
@@ -388,3 +480,6 @@ def test_streamlit_defaults_to_loopback_binding() -> None:
     config = (Path(__file__).parents[2] / ".streamlit/config.toml").read_text(encoding="utf-8")
 
     assert 'address = "127.0.0.1"' in config
+    assert 'backgroundColor = "#0c0b09"' in config
+    assert 'secondaryBackgroundColor = "#161411"' in config
+    assert 'textColor = "#e7d5b0"' in config

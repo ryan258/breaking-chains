@@ -1,5 +1,7 @@
 """Traceable epistemic categories and their validation rules."""
 
+from collections.abc import Iterable
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -177,6 +179,40 @@ EpistemicItem = Annotated[
 _EPISTEMIC_ITEM_ADAPTER = TypeAdapter(EpistemicItem)
 
 
+@dataclass(frozen=True, slots=True)
+class EpistemicGroups:
+    """Validated epistemic items partitioned by their durable category."""
+
+    premises: tuple[Premise, ...]
+    evidence: tuple[Evidence, ...]
+    claims: tuple[DerivedClaim, ...]
+    exploratory: tuple[ExploratoryItem, ...]
+
+
+def group_epistemic_items(items: Iterable[EpistemicItem]) -> EpistemicGroups:
+    """Partition validated items once for presentation and persistence consumers."""
+
+    premises: list[Premise] = []
+    evidence: list[Evidence] = []
+    claims: list[DerivedClaim] = []
+    exploratory: list[ExploratoryItem] = []
+    for item in items:
+        if isinstance(item, Premise):
+            premises.append(item)
+        elif isinstance(item, Evidence):
+            evidence.append(item)
+        elif isinstance(item, DerivedClaim):
+            claims.append(item)
+        else:
+            exploratory.append(item)
+    return EpistemicGroups(
+        premises=tuple(premises),
+        evidence=tuple(evidence),
+        claims=tuple(claims),
+        exploratory=tuple(exploratory),
+    )
+
+
 def parse_epistemic_item(value: object) -> EpistemicItem:
     """Validate untrusted input at the domain boundary."""
 
@@ -190,6 +226,7 @@ __all__ = [
     "DirectObservationDetails",
     "EpistemicLink",
     "EpistemicItem",
+    "EpistemicGroups",
     "Evidence",
     "ExperimentResultDetails",
     "ExploratoryItem",
@@ -199,6 +236,7 @@ __all__ = [
     "Premise",
     "PrimarySourceDetails",
     "Provenance",
+    "group_epistemic_items",
     "new_epistemic_item_id",
     "parse_epistemic_item",
 ]

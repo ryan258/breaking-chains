@@ -11,6 +11,29 @@ import pytest
 from playwright.sync_api import Page, expect, sync_playwright
 
 
+def _rgb_channels(css_color: str) -> tuple[int, int, int]:
+    return tuple(
+        int(channel.strip())
+        for channel in css_color.removeprefix("rgb(").removesuffix(")").split(",")
+    )
+
+
+def _relative_luminance(css_color: str) -> float:
+    channels = tuple(channel / 255 for channel in _rgb_channels(css_color))
+    linear = tuple(
+        channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+        for channel in channels
+    )
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _contrast_ratio(first: str, second: str) -> float:
+    lighter, darker = sorted(
+        (_relative_luminance(first), _relative_luminance(second)), reverse=True
+    )
+    return (lighter + 0.05) / (darker + 0.05)
+
+
 def _unused_loopback_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -96,10 +119,10 @@ def page() -> Iterator[Page]:
 
 def _prepare_decision_page(page: Page, url: str) -> None:
     page.goto(url)
-    page.get_by_role("textbox", name="Investigation seed").fill(
+    page.get_by_role("textbox", name="What are you investigating?").fill(
         "Verify the accessible decision contract."
     )
-    page.get_by_role("button", name="Prepare investigation").click()
+    page.get_by_role("button", name="Open case").click()
     page.get_by_role("button", name="A — Quick").click()
     expect(page.get_by_role("button", name="A — Approve live execution")).to_be_visible()
 
@@ -147,6 +170,45 @@ def test_ae_targets_have_names_minimum_size_logical_focus_and_visible_focus(
             page.keyboard.press("Tab")
 
 
+def test_case_file_theme_has_a_dark_tactile_surface_and_readable_display_type(
+    page: Page,
+    streamlit_url: str,
+) -> None:
+    page.goto(streamlit_url)
+    case_panel = page.locator(".st-key-case_start")
+    expect(case_panel).to_be_visible()
+
+    panel_style = case_panel.evaluate(
+        "element => ({"
+        "background: getComputedStyle(element).backgroundColor,"
+        "border: getComputedStyle(element).borderTopColor,"
+        "radius: getComputedStyle(element).borderTopLeftRadius"
+        "})"
+    )
+    assert panel_style["background"] == "rgb(22, 20, 17)"
+    assert _contrast_ratio(panel_style["border"], panel_style["background"]) >= 3
+    assert float(panel_style["radius"].removesuffix("px")) <= 4
+
+    seed_input = page.get_by_role("textbox", name="What are you investigating?")
+    input_style = seed_input.evaluate(
+        "element => ({"
+        "background: getComputedStyle(element).backgroundColor,"
+        "border: getComputedStyle(element).borderTopColor"
+        "})"
+    )
+    assert _contrast_ratio(input_style["border"], input_style["background"]) >= 3
+
+    heading = page.get_by_role("heading", name="Start a case")
+    heading_style = heading.evaluate(
+        "element => ({"
+        "color: getComputedStyle(element).color,"
+        "family: getComputedStyle(element).fontFamily"
+        "})"
+    )
+    assert heading_style["color"] == "rgb(231, 213, 176)"
+    assert "serif" in heading_style["family"].lower()
+
+
 def test_ae_controls_activate_with_enter_and_space_and_expose_text_status(
     page: Page,
     streamlit_url: str,
@@ -156,6 +218,9 @@ def test_ae_controls_activate_with_enter_and_space_and_expose_text_status(
     custom.focus()
     page.keyboard.press("Enter")
     expect(page.get_by_label("Custom answer")).to_be_visible()
+    decision_panel = page.locator(".st-key-decision_panel")
+    expect(decision_panel.get_by_label("Custom answer")).to_be_visible()
+    expect(decision_panel.get_by_role("button", name="Submit custom answer")).to_be_visible()
 
     second_page = page.context.new_page()
     _prepare_decision_page(second_page, streamlit_url)
@@ -177,11 +242,10 @@ def test_ae_keys_answer_the_visible_question_without_stealing_typed_text(
     page: Page,
     streamlit_url: str,
 ) -> None:
+    seed = "Drive the **whole** run for $5?\nSecond line"
     page.goto(streamlit_url)
-    page.get_by_role("textbox", name="Investigation seed").fill(
-        "Drive the whole run from the keyboard."
-    )
-    page.get_by_role("button", name="Prepare investigation").click()
+    page.get_by_role("textbox", name="What are you investigating?").fill(seed)
+    page.get_by_role("button", name="Open case").click()
     expect(page.get_by_role("button", name="A — Quick")).to_be_visible()
 
     page.keyboard.press("a")
@@ -202,10 +266,19 @@ def test_ae_keys_answer_the_visible_question_without_stealing_typed_text(
     expect(page.get_by_role("button", name="A — Accept action")).to_be_visible()
     page.keyboard.press("a")
     expect(page.locator("strong").filter(has_text="Stage:")).to_be_visible()
+    expect(
+        page.get_by_role(
+            "heading",
+            name="Drive the **whole** run for $5? Second line",
+            level=3,
+        )
+    ).to_be_visible()
 
 
 def test_validation_failure_is_explained_in_text(page: Page, streamlit_url: str) -> None:
     page.goto(streamlit_url)
-    page.get_by_role("button", name="Prepare investigation").click()
+    page.get_by_role("button", name="Open case").click()
 
-    expect(page.get_by_text("Enter an investigation seed before continuing.")).to_be_visible()
+    expect(
+        page.get_by_text('Enter a question in "What are you investigating?" before continuing.')
+    ).to_be_visible()

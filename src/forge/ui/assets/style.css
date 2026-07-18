@@ -1,6 +1,222 @@
 :root {
-  --forge-focus: #0b5fff;
-  --forge-border: #40566f;
+  --forge-ink: #0c0b09;
+  --forge-surface: #161411;
+  --forge-surface-raised: #201d18;
+  --forge-paper: #e7d5b0;
+  --forge-paper-muted: #bca77d;
+  --forge-brass: #8f7447;
+  --forge-border: #8f7447;
+  --forge-focus: #f2c96d;
+  --forge-display: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --forge-copy: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+[data-testid="stAppViewContainer"] {
+  color: var(--forge-paper);
+  background-color: var(--forge-ink);
+  background-image:
+    radial-gradient(circle at 82% 9%, rgb(143 116 71 / 10%), transparent 24rem),
+    repeating-linear-gradient(112deg, transparent 0 7rem, rgb(231 213 176 / 2%) 7.1rem 7.2rem);
+}
+
+[data-testid="stMain"] {
+  background: transparent;
+}
+
+[data-testid="stHeader"] {
+  background: rgb(12 11 9 / 98%);
+  border-bottom: 1px solid rgb(111 91 57 / 55%);
+}
+
+[data-testid="stToolbar"] {
+  color: var(--forge-paper-muted);
+}
+
+.block-container {
+  max-width: 94rem;
+  padding-top: 4.5rem;
+  padding-bottom: 4rem;
+}
+
+.forge-masthead {
+  display: flex;
+  justify-content: space-between;
+  color: var(--forge-paper-muted);
+  border-bottom: 1px solid rgb(111 91 57 / 55%);
+  padding-bottom: 0.65rem;
+  font-family: var(--forge-copy);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+[data-testid="stHeading"] {
+  color: var(--forge-paper) !important;
+  font-family: var(--forge-display) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.025em !important;
+}
+
+h1 {
+  padding-bottom: 0.25rem !important;
+  font-size: clamp(2rem, 4vw, 3.4rem) !important;
+}
+
+p,
+label,
+button,
+input,
+textarea,
+[data-testid="stCaptionContainer"] {
+  font-family: var(--forge-copy) !important;
+}
+
+[data-testid="stWidgetLabel"] p,
+[data-testid="stTextArea"] label p,
+[data-testid="stTextInput"] label p {
+  color: var(--forge-paper-muted) !important;
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: #9c8d70 !important;
+  opacity: 1 !important;
+}
+
+[data-testid="stCaptionContainer"] {
+  color: var(--forge-paper-muted) !important;
+  letter-spacing: 0.04em;
+}
+
+.st-key-case_start,
+.st-key-case_archive,
+.st-key-decision_panel,
+.st-key-case_file_header {
+  background: var(--forge-surface);
+  border: 1px solid var(--forge-border);
+  border-radius: 2px;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 38%);
+  padding: clamp(1rem, 2.5vw, 2rem);
+}
+
+.st-key-decision_panel {
+  margin-top: 1.25rem;
+}
+
+.st-key-decision_panel [data-testid="stCaptionContainer"],
+.st-key-case_file_header > div > [data-testid="stCaptionContainer"]:first-child {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.st-key-decision_panel [data-testid="stMarkdownContainer"] > p {
+  color: var(--forge-paper);
+  font-family: var(--forge-display) !important;
+  font-size: clamp(1.25rem, 2.5vw, 1.8rem);
+}
+
+.st-key-case_file_header h2 {
+  margin-bottom: 0;
+  text-transform: uppercase;
+}
+
+.st-key-case_file_header h3 {
+  color: var(--forge-paper-muted) !important;
+}
+
+.st-key-recent_cases {
+  margin-top: 1.5rem;
+}
+
+.st-key-recent_cases > div > div:first-child {
+  border-bottom: 1px solid rgb(143 116 71 / 55%);
+}
+
+[class*="st-key-case_card_"] {
+  position: relative;
+  min-height: 16rem;
+  overflow: visible;
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 2%), transparent 45%),
+    var(--forge-surface);
+  border: 1px solid var(--forge-border);
+  border-radius: 2px;
+  box-shadow: 0.4rem 0.45rem 0 #0b0a08, 0.45rem 0.5rem 0 1px var(--forge-border);
+  padding: 1.25rem;
+}
+
+[class*="st-key-case_card_"]::before {
+  position: absolute;
+  top: -0.6rem;
+  left: 1.75rem;
+  z-index: 1;
+  width: 0.45rem;
+  height: 2rem;
+  border: 2px solid var(--forge-paper-muted);
+  border-radius: 999px;
+  content: "";
+  transform: rotate(-8deg);
+}
+
+[class*="st-key-case_card_"] h3 {
+  min-height: 4.5rem;
+  font-size: 1.35rem !important;
+  text-transform: uppercase;
+}
+
+[class*="st-key-case_card_"] [data-testid="stCaptionContainer"]:first-of-type {
+  display: inline-block;
+  width: fit-content;
+  border: 1px solid var(--forge-border);
+  padding: 0.2rem 0.45rem;
+  text-transform: uppercase;
+}
+
+[data-testid="stExpander"],
+[data-testid="stStatusWidget"],
+[data-testid="stAlert"] {
+  color: var(--forge-paper);
+  background: var(--forge-surface) !important;
+  border-color: var(--forge-border) !important;
+  border-radius: 2px !important;
+}
+
+[data-testid="stExpander"] details,
+[data-testid="stExpander"] summary {
+  color: var(--forge-paper) !important;
+}
+
+code {
+  color: #f0dcae !important;
+  background: #100f0d !important;
+}
+
+.st-key-case_start h2,
+.st-key-case_archive h2 {
+  border-bottom: 1px solid rgb(143 116 71 / 55%);
+  padding-bottom: 0.65rem;
+  text-transform: uppercase;
+}
+
+[data-testid="stForm"] {
+  border: 0;
+  padding: 0;
+}
+
+textarea,
+input,
+[data-baseweb="select"] > div {
+  color: var(--forge-paper) !important;
+  background: #100f0d !important;
+  border-color: var(--forge-border) !important;
+  border-radius: 2px !important;
+}
+
+textarea {
+  min-height: 9rem !important;
 }
 
 [data-testid="stButton"] button,
@@ -8,7 +224,32 @@
 button[kind="formSubmit"] {
   min-width: 44px;
   min-height: 44px;
-  border-color: var(--forge-border);
+  color: var(--forge-paper) !important;
+  background: var(--forge-surface-raised) !important;
+  border: 1px solid var(--forge-border) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+button[kind="primaryFormSubmit"] {
+  color: #17130d !important;
+  background: var(--forge-paper) !important;
+  border-color: #c6ab78 !important;
+  font-weight: 700 !important;
+}
+
+[data-testid="stButton"] button p,
+[data-testid="stDownloadButton"] button p,
+button[kind="formSubmit"] p,
+button[kind="primaryFormSubmit"] p {
+  text-transform: uppercase;
+}
+
+button:hover {
+  border-color: var(--forge-paper-muted) !important;
+  filter: brightness(1.12);
 }
 
 button:focus-visible,
@@ -16,7 +257,7 @@ input:focus-visible,
 textarea:focus-visible,
 [role="combobox"]:focus-visible {
   outline: 3px solid var(--forge-focus) !important;
-  outline-offset: 2px !important;
+  outline-offset: 3px !important;
   box-shadow: none !important;
 }
 
@@ -25,6 +266,27 @@ div[data-testid="stHorizontalBlock"] {
 }
 
 @media (max-width: 640px) {
+  .block-container {
+    padding: 4.5rem 0.75rem 3rem;
+  }
+
+  .st-key-case_start,
+  .st-key-case_archive,
+  .st-key-decision_panel,
+  .st-key-case_file_header {
+    padding: 1rem;
+  }
+
+  .forge-masthead {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  [class*="st-key-case_card_"] {
+    min-height: auto;
+  }
+
   [data-testid="stButton"] button {
     padding-inline: 0.5rem;
   }

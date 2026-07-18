@@ -3,3 +3,10 @@ address = "127.0.0.1"
 headless = true
 enableXsrfProtection = true
 maxUploadSize = 1
+
+[theme]
+primaryColor = "#e7d5b0"
+backgroundColor = "#0c0b09"
+secondaryBackgroundColor = "#161411"
+textColor = "#e7d5b0"
+font = "monospace"

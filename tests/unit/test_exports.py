@@ -13,7 +13,7 @@ def record() -> InvestigationRecord:
     return InvestigationRecord(
         id="inv_export_example",
         seed="What does <script>alert('no')</script> reveal?",
-        selected_focus="Compare formats without losing data.",
+        selected_focus="Compare <img src=x onerror=alert(1)> formats without losing data.",
         workflow=InvestigationWorkflow.start(
             depth=DepthMode.QUICK,
             at=datetime(2026, 7, 18, tzinfo=UTC),
@@ -37,7 +37,19 @@ def test_html_export_is_a_safe_standalone_document(record: InvestigationRecord) 
     assert text.startswith("<!doctype html>")
     assert "<title>Investigation: What does &lt;script&gt;" in text
     assert "<script>alert('no')</script>" not in text
+    assert "<img src=x onerror=alert(1)>" not in text
+    assert "Compare &lt;img src=x onerror=alert(1)&gt; formats" in text
     assert "Machine-readable record" in text
+    assert '<header class="report-cover">' in text
+    assert '<section class="executive-summary"' in text
+    assert '<section class="report-section" id="analysis"' in text
+    assert '<section class="canonical-appendix"' in text
+    assert "@page" in text
+    assert "break-inside: avoid" in text
+    assert "<details" not in text
+    metadata_css = text.split(".report-metadata {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+    assert "position: absolute" not in metadata_css
+    assert "<main><pre>" not in text
     assert artifact.file_name == "inv_export_example.html"
     assert artifact.mime_type == "text/html"
 

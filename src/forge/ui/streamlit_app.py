@@ -37,7 +37,7 @@ from forge.ui.services import (
     start_investigation,
     submit_record_decision,
 )
-from forge.ui.view_models import completed_stage_labels, review_sections
+from forge.ui.view_models import completed_stage_labels, markdown_heading_text, review_sections
 
 st.set_page_config(page_title="First-Principles Forge", page_icon="⚒", layout="wide")
 st.html(Path(__file__).parent / "assets/style.css")
@@ -84,35 +84,40 @@ def _settings() -> ForgeSettings:
         st.stop()
 
 
-def _render_start(settings: ForgeSettings) -> None:
-    st.header("Start an investigation")
-    saved_records = repository(settings).list_records()
-    prior_labels = {"No prior investigation": None}
-    prior_labels.update({f"{record.seed} — {record.id}": record for record in saved_records})
-    with st.form("start_form"):
-        seed = st.text_area(
-            "Investigation seed",
-            key="seed",
-            help="A short question, observation, or problem to investigate.",
-        )
-        source = st.file_uploader(
-            "Optional local text or Markdown source",
-            type=["txt", "md", "markdown"],
-            help=(
-                "Up to 1 MB. The file remains local unless a later A-E consent question "
-                "is approved."
-            ),
-        )
-        prior_label = st.selectbox(
-            "Optional prior investigation seed",
-            prior_labels,
-            help="Start a traceable follow-up from a saved canonical record.",
-        )
-        prepared = st.form_submit_button("Prepare investigation", key="prepare_start")
+def _render_start(
+    settings: ForgeSettings,
+    saved_records: tuple[InvestigationRecord, ...],
+) -> None:
+    with st.container(key="case_start"):
+        st.header("Start a case")
+        st.caption("Ask a question worth examining. Add evidence and context when needed.")
+        prior_labels = {"No prior case file": None}
+        prior_labels.update({f"{record.seed} — {record.id}": record for record in saved_records})
+        with st.form("start_form"):
+            seed = st.text_area(
+                "What are you investigating?",
+                key="seed",
+                help="A short question, observation, or problem worth examining.",
+            )
+            with st.expander("Add evidence and context"):
+                source = st.file_uploader(
+                    "Optional local text or Markdown source",
+                    type=["txt", "md", "markdown"],
+                    help=(
+                        "Up to 1 MB. The file remains local unless a later A-E consent question "
+                        "is approved."
+                    ),
+                )
+                prior_label = st.selectbox(
+                    "Optional prior case file",
+                    prior_labels,
+                    help="Start a traceable follow-up from a saved canonical record.",
+                )
+            prepared = st.form_submit_button("Open case", key="prepare_start", type="primary")
     if not prepared:
         return
     if not seed.strip():
-        st.error("Enter an investigation seed before continuing.")
+        st.error('Enter a question in "What are you investigating?" before continuing.')
         return
     try:
         source_reference = cache_uploaded_source(settings, source)
@@ -137,27 +142,29 @@ def _render_start(settings: ForgeSettings) -> None:
 
 
 def _decision_buttons(prompt: DecisionPrompt) -> tuple[ChoiceLetter | None, str | None]:
-    st.markdown(prompt.question)
-    columns = st.columns(5)
-    selected = None
-    for column, option in zip(columns, prompt.options, strict=True):
-        label = f"{option.letter.value} — {option.label}"
-        if column.button(
-            label,
-            key=f"decision_{option.letter.value}",
-            help=option.description,
-            use_container_width=True,
-        ):
-            selected = option.letter
-    if selected is ChoiceLetter.E:
-        st.session_state.custom_prompt_id = prompt.id
-        st.rerun()
-    custom = None
-    if st.session_state.get("custom_prompt_id") == prompt.id:
-        custom = st.text_area("Custom answer", key="custom_answer")
-        if not st.button("Submit custom answer", key="submit_custom"):
-            return None, None
-        selected = ChoiceLetter.E
+    with st.container(key="decision_panel"):
+        st.caption("Decision checkpoint")
+        st.markdown(prompt.question)
+        columns = st.columns(5)
+        selected = None
+        for column, option in zip(columns, prompt.options, strict=True):
+            label = f"{option.letter.value} — {option.label}"
+            if column.button(
+                label,
+                key=f"decision_{option.letter.value}",
+                help=option.description,
+                use_container_width=True,
+            ):
+                selected = option.letter
+        if selected is ChoiceLetter.E:
+            st.session_state.custom_prompt_id = prompt.id
+            st.rerun()
+        custom = None
+        if st.session_state.get("custom_prompt_id") == prompt.id:
+            custom = st.text_area("Custom answer", key="custom_answer")
+            if not st.button("Submit custom answer", key="submit_custom"):
+                return None, None
+            selected = ChoiceLetter.E
     return selected, custom
 
 
@@ -226,28 +233,67 @@ def _handle_pending_start(settings: ForgeSettings) -> None:
     st.rerun()
 
 
-def _render_saved_records(settings: ForgeSettings) -> None:
-    records = repository(settings).list_records()
-    st.header("Saved investigations")
-    if not records:
-        st.caption("No saved investigations yet.")
-        return
-    query = st.text_input(
-        "Filter saved investigations",
-        key="record_filter",
-        help="Matches seed text, recorded focus, and indexed statement content.",
-    )
-    if query.strip():
-        records = filter_records(settings, records, query)
+def _render_saved_records(
+    settings: ForgeSettings,
+    records: tuple[InvestigationRecord, ...],
+) -> None:
+    with st.container(key="case_archive"):
+        st.header("Case archive")
         if not records:
-            st.caption("No saved investigations match this filter.")
+            st.caption("No case files yet. Open your first case to begin the archive.")
             return
-    labels = {f"{record.seed} — {record.id}": record for record in records}
-    selected_label = st.selectbox("Saved record", labels, key="saved_record")
-    if st.button("Resume selected investigation", key="resume_saved"):
-        record = labels[selected_label]
-        st.session_state.pending_resume_id = record.id
-        st.rerun()
+        query = st.text_input(
+            "Search case files",
+            key="record_filter",
+            help="Matches case title, recorded focus, and indexed statement content.",
+        )
+        if query.strip():
+            records = filter_records(settings, records, query)
+            if not records:
+                st.caption("No case files match this search.")
+                return
+        labels = {f"{record.seed} — {record.id}": record for record in records}
+        selected_label = st.selectbox("Case file", labels, key="saved_record")
+        if st.button("Open selected case", key="resume_saved", use_container_width=True):
+            record = labels[selected_label]
+            st.session_state.pending_resume_id = record.id
+            st.rerun()
+
+
+def _render_recent_case_files(records: tuple[InvestigationRecord, ...]) -> None:
+    records = tuple(
+        sorted(
+            records,
+            key=lambda record: record.workflow.updated_at,
+            reverse=True,
+        )[:3]
+    )
+    if not records:
+        return
+    with st.container(key="recent_cases"):
+        st.subheader("Your case files")
+        columns = st.columns(len(records))
+        for column, record in zip(columns, records, strict=True):
+            with column, st.container(key=f"case_card_{record.id}"):
+                status = (
+                    "Closed case"
+                    if record.workflow.stage is WorkflowStage.COMPLETED
+                    else "Active case"
+                )
+                st.caption(status)
+                st.markdown(f"### {markdown_heading_text(record.seed)}")
+                st.caption(f"Updated {record.workflow.updated_at:%b %d, %Y}")
+                st.markdown(
+                    f"{len(record.source_references)} sources · "
+                    f"{len(record.epistemic_items)} reasoning items"
+                )
+                if st.button(
+                    "View case file",
+                    key=f"open_case_card_{record.id}",
+                    use_container_width=True,
+                ):
+                    st.session_state.pending_resume_id = record.id
+                    st.rerun()
 
 
 def _handle_pending_resume(settings: ForgeSettings) -> None:
@@ -331,18 +377,21 @@ def _handle_live_continuation(settings: ForgeSettings) -> None:
 
 
 def _render_record(settings: ForgeSettings, record: InvestigationRecord) -> None:
-    st.header("Current investigation")
-    st.markdown(
-        f"**Stage:** `{record.workflow.stage.value}` · **Status:** "
-        f"`{record.workflow.status.value}` · **Mode:** `{record.workflow.depth.value}`"
-    )
-    completed = completed_stage_labels(record)
-    st.caption("Completed stages: " + " → ".join(completed))
-    with st.status(
-        "Completed" if record.workflow.stage.value == "completed" else "Investigation saved",
-        state="complete" if record.workflow.stage.value == "completed" else "running",
-    ):
-        st.write("Every finished stage is stored in the canonical Markdown record.")
+    with st.container(key="case_file_header"):
+        st.caption("Canonical local record")
+        st.header("Case file")
+        st.markdown(f"### {markdown_heading_text(record.seed)}")
+        st.markdown(
+            f"**Stage:** `{record.workflow.stage.value}` · **Status:** "
+            f"`{record.workflow.status.value}` · **Mode:** `{record.workflow.depth.value}`"
+        )
+        completed = completed_stage_labels(record)
+        st.caption("Completed stages: " + " → ".join(completed))
+        with st.status(
+            "Completed" if record.workflow.stage.value == "completed" else "Investigation saved",
+            state="complete" if record.workflow.stage.value == "completed" else "running",
+        ):
+            st.write("Every finished stage is stored in the canonical Markdown record.")
 
     for section in review_sections(record):
         with st.expander(f"{section.title} ({len(section.lines)})"):
@@ -456,6 +505,10 @@ def main() -> None:
         st.session_state.export_format = ExportFormat.MARKDOWN.label
     settings = _settings()
     components.html(_HOTKEY_SCRIPT, height=0)
+    st.html(
+        '<div class="forge-masthead" aria-label="Workspace information">'
+        "<span>Casework / local only</span><span>A–E keyboard shortcuts</span></div>"
+    )
     st.title("First-Principles Forge")
     st.caption(
         "A local, traceable workspace for questions that deserve careful reasoning. "
@@ -477,16 +530,18 @@ def main() -> None:
     active_id = st.session_state.get("active_investigation_id")
     if active_id and repository(settings).exists(active_id):
         _render_record(settings, repository(settings).load(active_id))
-        if st.button("Return to start and saved records", key="return_home"):
+        if st.button("Return to case archive", key="return_home"):
             st.session_state.pop("active_investigation_id", None)
             st.rerun()
         return
 
+    records = repository(settings).list_records()
     left, right = st.columns([3, 2])
     with left:
-        _render_start(settings)
+        _render_start(settings, records)
     with right:
-        _render_saved_records(settings)
+        _render_saved_records(settings, records)
+    _render_recent_case_files(records)
 
 
 main()

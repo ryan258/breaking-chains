@@ -15,6 +15,7 @@ from forge.domain.epistemics import (
     ExploratoryItem,
     ExploratoryType,
     Premise,
+    group_epistemic_items,
 )
 from forge.domain.identifiers import InvestigationId
 from forge.persistence.metadata import ChallengeDisposition, InvestigationRecord
@@ -149,10 +150,7 @@ def key_findings(record: InvestigationRecord) -> tuple[str, ...]:
 def render_record(record: InvestigationRecord) -> str:
     """Render a readable report followed by the lossless versioned record."""
 
-    premises = [item for item in record.epistemic_items if isinstance(item, Premise)]
-    evidence = [item for item in record.epistemic_items if isinstance(item, Evidence)]
-    claims = [item for item in record.epistemic_items if isinstance(item, DerivedClaim)]
-    exploratory = [item for item in record.epistemic_items if isinstance(item, ExploratoryItem)]
+    groups = group_epistemic_items(record.epistemic_items)
     findings = [f"- {_markdown_text(line)}" for line in key_findings(record)] or [
         "- Nothing to summarize yet; the investigation has not reached synthesis."
     ]
@@ -181,19 +179,19 @@ def render_record(record: InvestigationRecord) -> str:
         "",
         "## Premises",
         "",
-        *_epistemic_lines(premises),
+        *_epistemic_lines(groups.premises),
         "",
         "## Evidence",
         "",
-        *_epistemic_lines(evidence),
+        *_epistemic_lines(groups.evidence),
         "",
         "## Derived claims",
         "",
-        *_epistemic_lines(claims),
+        *_epistemic_lines(groups.claims),
         "",
         "## Connections and hypotheses",
         "",
-        *_epistemic_lines(exploratory),
+        *_epistemic_lines(groups.exploratory),
         "",
         "## Skeptical challenges",
         "",

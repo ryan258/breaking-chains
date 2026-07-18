@@ -761,7 +761,7 @@ Two notes that apply everywhere:
 **Why:** The A–E contract works identically with a mouse or single keys.
 **Idea:** Seed and run from the browser.
 **Steps:**
-1. Type a seed in the start panel, pick Quick/Standard/Deep, click "Prepare investigation."
+1. Type a question in "What are you investigating?" and click "Open case."
 2. Answer each decision using the five large A–E buttons — or just press the letter key.
 **Result:** The same orchestrator, budgets, and gates as the CLI, driven by taps or single keypresses.
 
@@ -778,7 +778,7 @@ Two notes that apply everywhere:
 **Idea:** Cross-interface resume.
 **Steps:**
 1. Pause an investigation in the terminal.
-2. In Streamlit, select it under saved investigations and click "Resume selected investigation."
+2. In the Case archive, select the case file and click "Open selected case."
 **Result:** The browser picks up at the exact stage the CLI left — one record, two doors.
 
 ### 97. Watch the stage breadcrumb during a run
