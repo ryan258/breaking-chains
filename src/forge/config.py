@@ -58,7 +58,7 @@ class ForgeSettings(BaseSettings):
     quick_max_calls: PositiveInt = 8
     standard_max_calls: PositiveInt = 10
     deep_max_calls: PositiveInt = 24
-    quick_max_output_tokens_per_call: PositiveInt = 1200
+    quick_max_output_tokens_per_call: PositiveInt = 2400
     standard_max_output_tokens_per_call: PositiveInt = 2400
     deep_max_output_tokens_per_call: PositiveInt = 4800
 
@@ -95,6 +95,23 @@ def load_settings(env_file: str | Path | None = ".env") -> ForgeSettings:
     except ValidationError as error:
         problems = tuple(_format_problem(item) for item in error.errors(include_input=False))
         raise ConfigurationError(problems) from None
+
+
+def safe_configuration_summary(settings: ForgeSettings) -> str:
+    """Return useful provider configuration without exposing credentials."""
+
+    role_models = (
+        ("Lead", settings.model_lead),
+        ("Researcher", settings.model_researcher),
+        ("Connection Finder", settings.model_connection_finder),
+        ("Synthesizer", settings.model_synthesizer),
+        ("Skeptic", settings.model_skeptic),
+        ("Experiment Designer", settings.model_experiment_designer),
+    )
+    lines = ["Configured role models:"]
+    lines.extend(f"- {role}: {model}" for role, model in role_models)
+    lines.append(f"- Provider: {settings.openrouter_base_url}")
+    return "\n".join(lines)
 
 
 def _format_problem(error: dict[str, object]) -> str:

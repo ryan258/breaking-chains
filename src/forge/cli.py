@@ -29,7 +29,12 @@ from forge.application.runtime import (
     repository,
 )
 from forge.application.source_ingestion import SourceImportError, import_local_source
-from forge.config import ConfigurationError, ForgeSettings, load_settings
+from forge.config import (
+    ConfigurationError,
+    ForgeSettings,
+    load_settings,
+    safe_configuration_summary,
+)
 from forge.domain.investigation import DepthMode, WorkflowStatus
 from forge.persistence.markdown import RecordFormatError, render_record
 
@@ -58,6 +63,20 @@ def _present_decision(prompt: DecisionPrompt) -> DecisionAttempt:
         if attempt.error is None:
             return attempt
         typer.echo(attempt.error)
+
+
+def _present_live_confirmation(
+    settings: ForgeSettings,
+    prompt: DecisionPrompt,
+) -> DecisionAttempt:
+    """Keep configuration review inside the live-consent boundary."""
+
+    while True:
+        confirmation = _present_decision(prompt)
+        assert confirmation.selection is not None
+        if confirmation.selection.letter is not ChoiceLetter.C:
+            return confirmation
+        typer.echo(f"\n{safe_configuration_summary(settings)}")
 
 
 async def _drive(orchestrator: InvestigationOrchestrator, view: OrchestrationView) -> None:
@@ -186,7 +205,7 @@ def investigate(
         budget=budget,
         source_attached=imported_source is not None,
     )
-    confirmation = _present_decision(confirmation_prompt)
+    confirmation = _present_live_confirmation(settings, confirmation_prompt)
     assert confirmation.selection is not None
     if confirmation.selection.letter in {ChoiceLetter.B, ChoiceLetter.C, ChoiceLetter.E}:
         typer.echo("No investigation was started and no provider call was made.")
@@ -223,7 +242,7 @@ def resume(investigation_id: str) -> None:
             source_attached=bool(record.source_references),
             resuming=True,
         )
-        confirmation = _present_decision(confirmation_prompt)
+        confirmation = _present_live_confirmation(settings, confirmation_prompt)
         assert confirmation.selection is not None
         if confirmation.selection.letter is not ChoiceLetter.A:
             typer.echo("The investigation remains saved and no provider call was made.")

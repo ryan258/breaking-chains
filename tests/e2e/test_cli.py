@@ -111,6 +111,21 @@ def test_declining_live_confirmation_starts_nothing(cli_environment: Path) -> No
     assert repository.list_records() == ()
 
 
+def test_reviewing_configuration_returns_to_live_confirmation(cli_environment: Path) -> None:
+    result = runner.invoke(
+        app,
+        ["investigate", "--seed", "Review before deciding.", "--mode", "quick"],
+        input="C\nB\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Start a live Quick investigation") == 2
+    assert "Configured role models:" in result.output
+    assert "Researcher: test/model" in result.output
+    assert "test-key-never-used" not in result.output
+    assert "no provider call was made" in result.output
+
+
 def test_prior_investigation_can_seed_a_traceable_follow_up(cli_environment: Path) -> None:
     first = runner.invoke(
         app,

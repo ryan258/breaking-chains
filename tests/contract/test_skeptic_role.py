@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 
 import pytest
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from forge.domain.epistemics import Confidence, ConfidenceLevel, ExploratoryItem, ExploratoryType
 from forge.domain.investigation import DepthMode, InvestigationWorkflow
@@ -71,3 +73,21 @@ def test_skeptic_request_is_versioned_and_contradiction_seeking() -> None:
     assert request.role is ModelRole.SKEPTIC
     assert request.prompt_contract_version == SKEPTIC_PROMPT_VERSION
     assert "counterexample" in request.messages[0].content.lower()
+
+
+def test_skeptic_schema_limits_challenges_to_every_hypothesis() -> None:
+    request = build_skeptic_request(
+        record(),
+        model="vendor/skeptic-model",
+        call_id="call_skeptic_contract",
+        max_output_tokens=1200,
+    )
+    validator = Draft202012Validator(request.output_schema)
+    validator.validate(payload())
+
+    invalid_target = payload()
+    invalid_target["challenges"][0]["target_id"] = "epi_not_a_hypothesis"
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(invalid_target)
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate({"challenges": []})

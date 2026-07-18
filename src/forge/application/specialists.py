@@ -103,6 +103,8 @@ class LiveSpecialistRunner:
                     receipt=result.receipt,
                     prior_receipts=failed_receipts,
                 )
+                if result.failure_kind is FailureKind.INVALID_REQUEST:
+                    raise last_error
                 failed_receipts = (*failed_receipts, result.receipt)
                 continue
             assert result.output is not None

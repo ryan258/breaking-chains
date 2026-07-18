@@ -47,7 +47,7 @@ def test_loads_required_values_with_approved_defaults(
     assert settings.quick_max_calls == 8
     assert settings.standard_max_calls == 10
     assert settings.deep_max_calls == 24
-    assert settings.quick_max_output_tokens_per_call == 1200
+    assert settings.quick_max_output_tokens_per_call == 2400
     assert settings.standard_max_output_tokens_per_call == 2400
     assert settings.deep_max_output_tokens_per_call == 4800
 

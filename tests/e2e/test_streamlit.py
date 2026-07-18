@@ -72,6 +72,26 @@ def test_streamlit_completes_deterministic_investigation_with_ae_controls(
     assert records[0].decisions[1].selection.letter.value == "D"
     assert at.expander[-1].label == "View saved Markdown record"
     assert at.code[-1].value.startswith("# Investigation: Why does the kettle whistle?")
+    assert at.selectbox(key="export_format").options == ["Markdown", "HTML", "Plain text"]
+    at.selectbox(key="export_format").select("HTML").run()
+    assert at.selectbox(key="export_format").value == "HTML"
+    assert not at.exception
+
+
+def test_streamlit_configuration_review_keeps_live_confirmation_open(
+    streamlit_environment: Path,
+) -> None:
+    at = app_test().run()
+    at.text_area(key="seed").input("Review the models before deciding.")
+    at.button(key="prepare_start").click().run()
+    at.button(key="decision_A").click().run()
+
+    at.button(key="decision_C").click().run()
+
+    assert at.button(key="decision_A").label == "A — Approve live execution"
+    assert any("Configured role models" in info.value for info in at.info)
+    assert not any("test-key-never-used" in info.value for info in at.info)
+    assert not at.exception
 
 
 def test_paused_investigation_can_continue_locally_without_model_calls(

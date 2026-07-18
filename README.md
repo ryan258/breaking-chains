@@ -53,14 +53,22 @@ The checked-in Streamlit configuration binds to `127.0.0.1`, enables XSRF protec
 uploads to 1 MB. Do not expose this version-one interface on a LAN or public host: it deliberately
 has no authentication, deployment, or multi-user behavior.
 
+Saved investigations can be downloaded from Streamlit as Markdown, HTML, or plain text. Markdown
+remains the canonical local record used for resume and index rebuild; HTML and text downloads are
+derived exports for reading and sharing.
+
 ## Live execution and cost bounds
 
 Every live start and live resume asks for fresh A-E confirmation before a provider call. The prompt
 shows the chosen mode, call ceiling, per-call output-token ceiling, and source boundary.
+Choosing **C — Review configuration** shows the six configured role models without exposing the API
+key, then returns to the same confirmation. Provider-bound Pydantic schemas are normalized to the
+strict structured-output subset, and OpenRouter is required to use routes supporting the requested
+parameters.
 
 | Mode | Maximum calls | Maximum output tokens per call |
 | --- | ---: | ---: |
-| Quick | 8 | 1,200 |
+| Quick | 8 | 2,400 |
 | Standard | 10 | 2,400 |
 | Deep | 24 | 4,800 |
 

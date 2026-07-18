@@ -18,8 +18,14 @@ from forge.application.decisions import (
 )
 from forge.application.runtime import budget_policy, filter_records, repository
 from forge.application.source_ingestion import SourceImportError
-from forge.config import ConfigurationError, ForgeSettings, load_settings
+from forge.config import (
+    ConfigurationError,
+    ForgeSettings,
+    load_settings,
+    safe_configuration_summary,
+)
 from forge.domain.investigation import DepthMode, WorkflowStage, WorkflowStatus
+from forge.exports import ExportFormat, export_record
 from forge.persistence.metadata import InvestigationRecord
 from forge.ui.services import (
     cache_uploaded_source,
@@ -189,7 +195,11 @@ def _handle_pending_start(settings: ForgeSettings) -> None:
         )
         st.session_state.pop("custom_prompt_id", None)
         st.rerun()
-    if choice in {ChoiceLetter.B, ChoiceLetter.C, ChoiceLetter.E}:
+    if prompt.kind is DecisionKind.LIVE_CONFIRMATION and choice is ChoiceLetter.C:
+        st.session_state.notice = safe_configuration_summary(settings)
+        st.session_state.pop("custom_prompt_id", None)
+        st.rerun()
+    if choice in {ChoiceLetter.B, ChoiceLetter.E}:
         message = custom or "No investigation was started and no provider call was made."
         st.session_state.notice = message
         del st.session_state.pending_start
@@ -266,6 +276,10 @@ def _handle_pending_resume(settings: ForgeSettings) -> None:
     choice, custom = _decision_buttons(prompt)
     if choice is None:
         return
+    if prompt.kind is DecisionKind.LIVE_CONFIRMATION and choice is ChoiceLetter.C:
+        st.session_state.notice = safe_configuration_summary(settings)
+        st.session_state.pop("custom_prompt_id", None)
+        st.rerun()
     if choice is not ChoiceLetter.A:
         st.session_state.notice = (
             custom or "The investigation remains saved and no provider call was made."
@@ -297,6 +311,10 @@ def _handle_live_continuation(settings: ForgeSettings) -> None:
     choice, custom = _decision_buttons(prompt)
     if choice is None:
         return
+    if choice is ChoiceLetter.C:
+        st.session_state.notice = safe_configuration_summary(settings)
+        st.session_state.pop("custom_prompt_id", None)
+        st.rerun()
     if choice is not ChoiceLetter.A:
         st.session_state.notice = custom or "The investigation remains paused."
         st.session_state.active_investigation_id = record.id
@@ -338,11 +356,24 @@ def _render_record(settings: ForgeSettings, record: InvestigationRecord) -> None
     if record_path.is_file():
         with st.expander("View saved Markdown record"):
             st.code(record_path.read_text(encoding="utf-8"), language="markdown")
+        export_formats = tuple(ExportFormat)
+        selected_export_label = st.selectbox(
+            "Export format",
+            [export_format.label for export_format in export_formats],
+            key="export_format",
+            help="Markdown remains the canonical saved record; HTML and plain text are derived.",
+        )
+        selected_export_format = next(
+            export_format
+            for export_format in export_formats
+            if export_format.label == selected_export_label
+        )
+        artifact = export_record(record, selected_export_format)
         st.download_button(
-            "Download saved Markdown record",
-            data=record_path.read_bytes(),
-            file_name=record_path.name,
-            mime="text/markdown",
+            f"Download {selected_export_format.label} record",
+            data=artifact.data,
+            file_name=artifact.file_name,
+            mime=artifact.mime_type,
             key="download_record",
         )
 
@@ -421,6 +452,8 @@ def _render_record(settings: ForgeSettings, record: InvestigationRecord) -> None
 
 
 def main() -> None:
+    if "export_format" not in st.session_state:
+        st.session_state.export_format = ExportFormat.MARKDOWN.label
     settings = _settings()
     components.html(_HOTKEY_SCRIPT, height=0)
     st.title("First-Principles Forge")

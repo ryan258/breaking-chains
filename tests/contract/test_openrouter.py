@@ -8,6 +8,7 @@ import pytest
 from forge.gateways.model import FailureKind, ModelMessage, ModelRequest, ModelRole
 from forge.gateways.openrouter import OpenRouterGateway
 from forge.observability.trace import TraceWriter
+from forge.roles.researcher import ResearcherRoleOutput
 
 
 def request() -> ModelRequest:
@@ -52,6 +53,7 @@ async def test_maps_success_and_writes_trace_artifact(tmp_path: Path) -> None:
         assert incoming.headers["authorization"] == "Bearer test-secret"
         body = json.loads(incoming.content)
         assert body["response_format"]["json_schema"]["strict"] is True
+        assert body["provider"]["require_parameters"] is True
         return httpx.Response(
             200,
             json={
@@ -94,6 +96,46 @@ async def test_maps_success_and_writes_trace_artifact(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_converts_pydantic_schema_to_the_strict_provider_subset(tmp_path: Path) -> None:
+    captured_schema = None
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        nonlocal captured_schema
+        body = json.loads(incoming.content)
+        captured_schema = body["response_format"]["json_schema"]["schema"]
+        return httpx.Response(400, json={"error": {"code": 400, "message": "stop after capture"}})
+
+    transport, client = gateway(tmp_path, httpx.MockTransport(handler), retries=0)
+    original_schema = ResearcherRoleOutput.model_json_schema()
+    researcher_request = request().model_copy(update={"output_schema": original_schema})
+    try:
+        await transport.complete(researcher_request)
+    finally:
+        await client.aclose()
+
+    assert captured_schema is not None
+    pending = [captured_schema]
+    converted_unions = 0
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            assert "oneOf" not in node
+            assert "discriminator" not in node
+            if "anyOf" in node:
+                converted_unions += 1
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                assert node["required"] == list(properties)
+                assert node["additionalProperties"] is False
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    assert converted_unions > 0
+    assert "oneOf" in original_schema["properties"]["epistemic_items"]["items"]
+    assert "id" not in original_schema["$defs"]["Premise"].get("required", [])
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("response", "expected"),
     [
@@ -110,7 +152,7 @@ async def test_maps_success_and_writes_trace_artifact(tmp_path: Path) -> None:
         ),
         (
             httpx.Response(400, json={"error": {"code": 400, "message": "bad request"}}),
-            FailureKind.PROVIDER_ERROR,
+            FailureKind.INVALID_REQUEST,
         ),
         (
             httpx.Response(

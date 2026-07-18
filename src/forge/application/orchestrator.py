@@ -690,11 +690,17 @@ def _recovery_prompt(
     *,
     failure_kind: FailureKind | None = None,
 ) -> DecisionPrompt:
+    invalid_request = failure_kind is FailureKind.INVALID_REQUEST
     question = (
         "The model returned a response, but Forge quarantined it because it did not satisfy "
         "the role contract. Review it below, then choose what should happen next."
         if failure_kind is FailureKind.MALFORMED_OUTPUT
-        else "The live model call failed. What should happen next?"
+        else (
+            "The provider rejected this request as invalid, so retrying unchanged will fail "
+            "again. Pause and change the model or configuration before continuing."
+            if invalid_request
+            else "The live model call failed. What should happen next?"
+        )
     )
     return DecisionPrompt(
         id=f"{investigation_id}-recovery-{stage.value}-v1",
@@ -704,8 +710,12 @@ def _recovery_prompt(
             DecisionOption(
                 letter=ChoiceLetter.A,
                 label="Retry now",
-                description="Retry the same unfinished stage within the remaining call budget.",
-                is_recommended=True,
+                description=(
+                    "Retry only after the application or provider configuration has changed."
+                    if invalid_request
+                    else "Retry the same unfinished stage within the remaining call budget."
+                ),
+                is_recommended=not invalid_request,
             ),
             DecisionOption(
                 letter=ChoiceLetter.B,
@@ -714,8 +724,9 @@ def _recovery_prompt(
             ),
             DecisionOption(
                 letter=ChoiceLetter.C,
-                label="Change model",
+                label="Change model or configuration" if invalid_request else "Change model",
                 description="Pause so the role model can be changed in local configuration.",
+                is_recommended=invalid_request,
             ),
             DecisionOption(
                 letter=ChoiceLetter.D,

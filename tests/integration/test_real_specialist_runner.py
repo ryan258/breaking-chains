@@ -10,7 +10,7 @@ from forge.application.budgets import (
     live_run_confirmation_prompt,
 )
 from forge.application.decisions import DecisionKind, submit_decision
-from forge.application.orchestrator import InvestigationOrchestrator
+from forge.application.orchestrator import InvestigationOrchestrator, _recovery_prompt
 from forge.application.specialists import LiveSpecialistRunError, LiveSpecialistRunner
 from forge.domain.investigation import DepthMode, InvestigationWorkflow
 from forge.gateways.model import FailureKind, ModelReceipt, ModelResult, ModelRole, ModelUsage
@@ -339,6 +339,42 @@ async def test_single_transient_failure_is_retried_silently_with_both_receipts()
     assert gateway.calls == 2
     assert contribution.decision_prompt is not None
     assert len(contribution.model_receipts) == 2
+
+
+@pytest.mark.asyncio
+async def test_invalid_request_is_not_retried_silently() -> None:
+    class InvalidRequestGateway:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete(self, request):
+            self.calls += 1
+            return ModelResult(
+                failure_kind=FailureKind.INVALID_REQUEST,
+                failure_message="Model request is incompatible with the provider",
+                receipt=receipt(request.role),
+            )
+
+    gateway = InvalidRequestGateway()
+
+    with pytest.raises(LiveSpecialistRunError, match="incompatible") as failure:
+        await runner(gateway).run(ModelRole.LEAD, approved_record())
+
+    assert gateway.calls == 1
+    assert failure.value.prior_receipts == ()
+
+
+def test_invalid_request_recovery_recommends_configuration_change() -> None:
+    prompt = _recovery_prompt(
+        "inv_live",
+        approved_record().workflow.stage,
+        failure_kind=FailureKind.INVALID_REQUEST,
+    )
+
+    assert "retrying unchanged will fail again" in prompt.question
+    assert prompt.options[2].label == "Change model or configuration"
+    assert prompt.options[2].is_recommended
+    assert not prompt.options[0].is_recommended
 
 
 @pytest.mark.asyncio

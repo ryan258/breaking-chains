@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 
 import pytest
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from pydantic import ValidationError
 
 from forge.domain.epistemics import Confidence, ConfidenceLevel, ExploratoryItem, ExploratoryType
@@ -93,3 +95,17 @@ def test_synthesizer_request_is_versioned() -> None:
     assert request.role is ModelRole.SYNTHESIZER
     assert request.prompt_contract_version == SYNTHESIZER_PROMPT_VERSION
     assert "competing explanations" in request.messages[0].content.lower()
+
+
+def test_synthesizer_schema_rejects_a_hypothesis_as_an_alternative() -> None:
+    request = build_synthesizer_request(
+        record(),
+        model="vendor/synthesizer-model",
+        call_id="call_synthesizer_contract",
+        max_output_tokens=1600,
+    )
+    invalid = payload()
+    invalid["alternative_explanations"][0]["exploratory_type"] = "hypothesis"
+
+    with pytest.raises(JsonSchemaValidationError):
+        Draft202012Validator(request.output_schema).validate(invalid)

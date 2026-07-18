@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 from datetime import UTC, datetime
 from time import monotonic
@@ -104,7 +105,8 @@ class OpenRouterGateway:
         usage = ModelUsage()
 
         try:
-            Draft202012Validator.check_schema(request.output_schema)
+            provider_schema = payload["response_format"]["json_schema"]["schema"]
+            Draft202012Validator.check_schema(provider_schema)
             json.dumps(payload)
         except (SchemaError, TypeError, ValueError):
             rejected_request = {
@@ -345,6 +347,8 @@ class OpenRouterGateway:
 
     @staticmethod
     def _http_failure_kind(status_code: int) -> FailureKind:
+        if status_code == 400:
+            return FailureKind.INVALID_REQUEST
         if status_code == 429:
             return FailureKind.RATE_LIMIT
         if status_code == 408:
@@ -365,12 +369,46 @@ class OpenRouterGateway:
             "model": request.model,
             "messages": [message.model_dump() for message in request.messages],
             "max_completion_tokens": request.max_output_tokens,
+            "provider": {"require_parameters": True},
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": request.output_schema_name,
                     "strict": True,
-                    "schema": request.output_schema,
+                    "schema": _strict_output_schema(request.output_schema),
                 },
             },
         }
+
+
+def _strict_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return the strict JSON Schema subset expected by structured-output providers."""
+
+    # Mirrors the official OpenAI SDK's Pydantic schema transformation:
+    # https://github.com/openai/openai-python/blob/main/src/openai/lib/_pydantic.py
+    strict_schema = copy.deepcopy(schema)
+
+    def normalize(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                normalize(item)
+            return
+        if not isinstance(node, dict):
+            return
+        one_of = node.pop("oneOf", None)
+        if isinstance(one_of, list):
+            # OpenAI's strict structured-output subset accepts anyOf but rejects
+            # the oneOf/discriminator form emitted for Pydantic tagged unions.
+            node["anyOf"] = one_of
+        node.pop("discriminator", None)
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            node["required"] = list(properties)
+            node["additionalProperties"] = False
+        if node.get("default", object()) is None:
+            node.pop("default")
+        for value in node.values():
+            normalize(value)
+
+    normalize(strict_schema)
+    return strict_schema
