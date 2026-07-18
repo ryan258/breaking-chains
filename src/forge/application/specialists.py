@@ -1,10 +1,11 @@
 """Live specialist execution behind approval, budgets, and role contracts."""
 
 from collections.abc import Mapping
+from dataclasses import replace
 
 from pydantic import ValidationError
 
-from forge.application.budgets import BudgetPolicy
+from forge.application.budgets import BudgetExceeded, BudgetPolicy
 from forge.application.decisions import ChoiceLetter, DecisionKind
 from forge.application.orchestrator import SpecialistContribution, SpecialistExecutionError
 from forge.domain.identifiers import new_call_id
@@ -27,8 +28,14 @@ class LiveSpecialistRunError(SpecialistExecutionError):
         *,
         failure_kind: FailureKind,
         receipt: ModelReceipt,
+        prior_receipts: tuple[ModelReceipt, ...] = (),
     ) -> None:
-        super().__init__(message, failure_kind=failure_kind, receipt=receipt)
+        super().__init__(
+            message,
+            failure_kind=failure_kind,
+            receipt=receipt,
+            prior_receipts=prior_receipts,
+        )
 
 
 class LiveSpecialistRunner:
@@ -67,33 +74,58 @@ class LiveSpecialistRunner:
             0,
             len(record.model_receipts) - budget.max_calls * (approved_batches - 1),
         )
-        budget.assert_call_allowed(
-            calls_used=calls_used_in_current_batch,
-            requested_output_tokens=budget.max_output_tokens_per_call,
-        )
-        request = self._build_request(
-            role,
-            record,
-            call_id=new_call_id(),
-            max_output_tokens=budget.max_output_tokens_per_call,
-        )
-        result = await self._gateway.complete(request)
-        if not result.is_success:
-            assert result.failure_kind is not None
-            raise LiveSpecialistRunError(
-                result.failure_message or "Live specialist call failed",
-                failure_kind=result.failure_kind,
-                receipt=result.receipt,
+        # One silent retry per stage: a single flaky call should not cost the
+        # user a recovery question, but every attempt stays budgeted on record.
+        last_error: LiveSpecialistRunError | None = None
+        failed_receipts: tuple[ModelReceipt, ...] = ()
+        for attempt_offset in range(2):
+            try:
+                budget.assert_call_allowed(
+                    calls_used=calls_used_in_current_batch + attempt_offset,
+                    requested_output_tokens=budget.max_output_tokens_per_call,
+                )
+            except BudgetExceeded:
+                if last_error is not None:
+                    raise last_error from None
+                raise
+            request = self._build_request(
+                role,
+                record,
+                call_id=new_call_id(),
+                max_output_tokens=budget.max_output_tokens_per_call,
             )
-        assert result.output is not None
-        try:
-            return self._parse_contribution(role, result.output, record, result.receipt)
-        except (ValidationError, ValueError) as error:
-            raise LiveSpecialistRunError(
-                f"Model provider {role.value} output failed validation.",
-                failure_kind=FailureKind.MALFORMED_OUTPUT,
-                receipt=result.receipt,
-            ) from error
+            result = await self._gateway.complete(request)
+            if not result.is_success:
+                assert result.failure_kind is not None
+                last_error = LiveSpecialistRunError(
+                    result.failure_message or "Live specialist call failed",
+                    failure_kind=result.failure_kind,
+                    receipt=result.receipt,
+                    prior_receipts=failed_receipts,
+                )
+                failed_receipts = (*failed_receipts, result.receipt)
+                continue
+            assert result.output is not None
+            try:
+                contribution = self._parse_contribution(role, result.output, record, result.receipt)
+            except (ValidationError, ValueError) as error:
+                last_error = LiveSpecialistRunError(
+                    f"Model provider {role.value} output failed validation.",
+                    failure_kind=FailureKind.MALFORMED_OUTPUT,
+                    receipt=result.receipt,
+                    prior_receipts=failed_receipts,
+                )
+                last_error.__cause__ = error
+                failed_receipts = (*failed_receipts, result.receipt)
+                continue
+            if failed_receipts:
+                contribution = replace(
+                    contribution,
+                    model_receipts=(*failed_receipts, *contribution.model_receipts),
+                )
+            return contribution
+        assert last_error is not None
+        raise last_error
 
     def _build_request(
         self,

@@ -299,36 +299,65 @@ async def test_semantically_invalid_provider_output_becomes_a_recoverable_failur
     assert "epi_missing_basis" not in str(failure.value)
 
 
+class FlakyGateway:
+    """Fail a fixed number of leading calls, then return the given output."""
+
+    def __init__(self, output: dict[str, object], *, failures: int) -> None:
+        self.output = output
+        self.failures = failures
+        self.calls = 0
+
+    async def complete(self, request):
+        self.calls += 1
+        if self.calls <= self.failures:
+            return ModelResult(
+                failure_kind=FailureKind.TIMEOUT,
+                failure_message="Model provider timed out",
+                receipt=receipt(request.role),
+            )
+        return ModelResult(output=self.output, receipt=receipt(request.role))
+
+
+LEAD_OUTPUT = {
+    "question": "Which constraint should guide the investigation?",
+    "options": [
+        {"label": "Energy", "description": "Trace conservation."},
+        {"label": "Time", "description": "Inspect timing."},
+        {"label": "Information", "description": "Find bottlenecks."},
+        {"label": "Materials", "description": "Inspect resource limits."},
+    ],
+    "recommended_index": 0,
+}
+
+
+@pytest.mark.asyncio
+async def test_single_transient_failure_is_retried_silently_with_both_receipts() -> None:
+    gateway = FlakyGateway(LEAD_OUTPUT, failures=1)
+
+    contribution = await runner(gateway).run(ModelRole.LEAD, approved_record())
+
+    assert gateway.calls == 2
+    assert contribution.decision_prompt is not None
+    assert len(contribution.model_receipts) == 2
+
+
+@pytest.mark.asyncio
+async def test_retry_is_skipped_when_the_batch_has_no_remaining_call() -> None:
+    gateway = FlakyGateway(LEAD_OUTPUT, failures=1)
+    nearly_exhausted = approved_record(receipts=tuple(receipt() for _ in range(5)))
+
+    with pytest.raises(LiveSpecialistRunError, match="timed out") as failure:
+        await runner(gateway).run(ModelRole.LEAD, nearly_exhausted)
+
+    assert gateway.calls == 1
+    assert failure.value.prior_receipts == ()
+
+
 @pytest.mark.asyncio
 async def test_live_failure_persists_receipt_and_retries_from_an_ae_recovery_prompt(
     tmp_path: Path,
 ) -> None:
-    lead_output = {
-        "question": "Which constraint should guide the investigation?",
-        "options": [
-            {"label": "Energy", "description": "Trace conservation."},
-            {"label": "Time", "description": "Inspect timing."},
-            {"label": "Information", "description": "Find bottlenecks."},
-            {"label": "Materials", "description": "Inspect resource limits."},
-        ],
-        "recommended_index": 0,
-    }
-
-    class FlakyGateway:
-        def __init__(self) -> None:
-            self.calls = 0
-
-        async def complete(self, request):
-            self.calls += 1
-            if self.calls == 1:
-                return ModelResult(
-                    failure_kind=FailureKind.TIMEOUT,
-                    failure_message="Model provider timed out",
-                    receipt=receipt(request.role),
-                )
-            return ModelResult(output=lead_output, receipt=receipt(request.role))
-
-    gateway = FlakyGateway()
+    gateway = FlakyGateway(LEAD_OUTPUT, failures=2)
     store = InvestigationUnitOfWork(
         MarkdownInvestigationRepository(tmp_path / "outputs" / "investigations"),
         SQLiteProjection(tmp_path / "data" / "forge.sqlite3"),
@@ -341,7 +370,7 @@ async def test_live_failure_persists_receipt_and_retries_from_an_ae_recovery_pro
     )
     failed = await orchestrator.start(
         investigation_id="inv_live",
-        seed="Retry without losing the failed receipt.",
+        seed="Retry without losing the failed receipts.",
         depth=DepthMode.QUICK,
         at=STARTED,
         live_confirmation=approved_record().decisions[0],
@@ -349,7 +378,8 @@ async def test_live_failure_persists_receipt_and_retries_from_an_ae_recovery_pro
 
     assert failed.prompt.kind is DecisionKind.RECOVERY
     assert failed.record.workflow.stage.value == "seeded"
-    assert failed.record.model_receipts == (receipt(ModelRole.LEAD),)
+    assert failed.record.model_receipts == (receipt(ModelRole.LEAD), receipt(ModelRole.LEAD))
+    assert gateway.calls == 2
     assert "timed out" in failed.error
 
     focus = await orchestrator.submit_decision(
@@ -359,8 +389,8 @@ async def test_live_failure_persists_receipt_and_retries_from_an_ae_recovery_pro
     )
 
     assert focus.prompt.kind is DecisionKind.FOCUS_CHECKPOINT
-    assert len(focus.record.model_receipts) == 2
-    assert gateway.calls == 2
+    assert len(focus.record.model_receipts) == 3
+    assert gateway.calls == 3
 
 
 @pytest.mark.asyncio

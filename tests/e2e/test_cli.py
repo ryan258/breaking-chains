@@ -39,7 +39,7 @@ def test_quick_investigation_completes_with_single_letter_choices(
 
     assert result.exit_code == 0, result.output
     assert "completed (active)" in result.output
-    assert "at most 6 model calls" in result.output
+    assert "at most 8 model calls" in result.output
     match = re.search(r"inv_[a-z0-9]+", result.output)
     assert match is not None
     record_path = cli_environment / "outputs" / "investigations" / f"{match.group()}.md"

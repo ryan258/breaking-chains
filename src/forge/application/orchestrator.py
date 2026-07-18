@@ -77,10 +77,14 @@ class SpecialistExecutionError(RuntimeError):
         *,
         failure_kind: FailureKind,
         receipt: ModelReceipt,
+        prior_receipts: tuple[ModelReceipt, ...] = (),
     ) -> None:
         super().__init__(message)
         self.failure_kind = failure_kind
         self.receipt = receipt
+        # Receipts of earlier attempts in the same stage that are not yet
+        # persisted; they must survive so paid usage stays auditable.
+        self.prior_receipts = prior_receipts
 
 
 class InvestigationStore(Protocol):
@@ -218,7 +222,11 @@ class InvestigationOrchestrator:
             except SpecialistExecutionError as error:
                 recovery = record.model_copy(
                     update={
-                        "model_receipts": (*record.model_receipts, error.receipt),
+                        "model_receipts": (
+                            *record.model_receipts,
+                            *error.prior_receipts,
+                            error.receipt,
+                        ),
                         "pending_decision": _recovery_prompt(
                             record.id,
                             record.workflow.stage,

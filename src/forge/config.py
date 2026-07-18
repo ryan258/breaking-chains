@@ -55,7 +55,7 @@ class ForgeSettings(BaseSettings):
     output_dir: Path = Path("outputs")
     log_dir: Path = Path("logs")
 
-    quick_max_calls: PositiveInt = 6
+    quick_max_calls: PositiveInt = 8
     standard_max_calls: PositiveInt = 10
     deep_max_calls: PositiveInt = 24
     quick_max_output_tokens_per_call: PositiveInt = 1200

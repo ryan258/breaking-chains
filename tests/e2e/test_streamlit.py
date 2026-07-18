@@ -47,7 +47,7 @@ def test_streamlit_completes_deterministic_investigation_with_ae_controls(
     at.button(key="prepare_start").click().run()
     at.button(key="decision_A").click().run()
 
-    assert "at most 6 model calls" in at.markdown[-1].value
+    assert "at most 8 model calls" in at.markdown[-1].value
     assert [button.label[0] for button in at.button if button.key.startswith("decision_")] == [
         "A",
         "B",
@@ -179,7 +179,7 @@ def test_live_saved_record_requires_fresh_ae_confirmation_without_exposing_secre
     prompt = live_run_confirmation_prompt(
         investigation_id=investigation_id,
         depth=DepthMode.QUICK,
-        budget=DepthBudget(max_calls=6, max_output_tokens_per_call=1200),
+        budget=DepthBudget(max_calls=8, max_output_tokens_per_call=1200),
         source_attached=False,
     )
     record = InvestigationRecord(
@@ -227,7 +227,7 @@ def test_exhausted_live_record_opens_the_local_continuation_path(
     approval_prompt = live_run_confirmation_prompt(
         investigation_id=investigation_id,
         depth=DepthMode.QUICK,
-        budget=DepthBudget(max_calls=6, max_output_tokens_per_call=1200),
+        budget=DepthBudget(max_calls=8, max_output_tokens_per_call=1200),
         source_attached=False,
     )
     receipts = tuple(
@@ -242,7 +242,7 @@ def test_exhausted_live_record_opens_the_local_continuation_path(
             prompt_contract_version="connection-finder-v1",
             artifact_path=streamlit_environment / f"outputs/model-calls/call_{index}.json",
         )
-        for index in range(6)
+        for index in range(8)
     )
     record = InvestigationRecord(
         id=investigation_id,
@@ -288,7 +288,7 @@ def test_recovery_screen_shows_quarantined_model_output_without_trusting_it(
     approval_prompt = live_run_confirmation_prompt(
         investigation_id=investigation_id,
         depth=DepthMode.QUICK,
-        budget=DepthBudget(max_calls=6, max_output_tokens_per_call=1200),
+        budget=DepthBudget(max_calls=8, max_output_tokens_per_call=1200),
         source_attached=False,
     )
     artifact_path = (

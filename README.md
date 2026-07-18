@@ -60,13 +60,16 @@ shows the chosen mode, call ceiling, per-call output-token ceiling, and source b
 
 | Mode | Maximum calls | Maximum output tokens per call |
 | --- | ---: | ---: |
-| Quick | 6 | 1,200 |
+| Quick | 8 | 1,200 |
 | Standard | 10 | 2,400 |
 | Deep | 24 | 4,800 |
 
 These are hard defaults and may be lowered in `.env`. Each role has a separate model assignment:
-Lead, Researcher, Connection Finder, Synthesizer, Skeptic, and Experiment Designer. A failed call
-stores a sanitized receipt and offers A-E recovery without discarding completed stages.
+Lead, Researcher, Connection Finder, Synthesizer, Skeptic, and Experiment Designer. Choose role
+models that support structured (JSON-schema) output; free-tier models frequently fail that
+contract, and a full run needs six successful calls. One transient failure per stage is retried
+silently within the same budget. A second failure stores a sanitized receipt, quarantines any
+malformed response for review, and offers A-E recovery without discarding completed stages.
 
 ## Privacy boundary
 
