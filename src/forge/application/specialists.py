@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 
 from forge.application.budgets import BudgetPolicy
+from forge.application.decisions import ChoiceLetter, DecisionKind
 from forge.application.orchestrator import SpecialistContribution, SpecialistExecutionError
 from forge.domain.identifiers import new_call_id
 from forge.gateways.model import FailureKind, ModelGateway, ModelReceipt, ModelRole
@@ -53,8 +54,19 @@ class LiveSpecialistRunner:
         if not record.live_execution_approved:
             raise PermissionError("live model execution is not approved for this investigation")
         budget = self._budgets.for_depth(record.workflow.depth)
+        approved_batches = sum(
+            1
+            for decision in record.decisions
+            if decision.prompt.kind is DecisionKind.LIVE_CONFIRMATION
+            and decision.selection is not None
+            and decision.selection.letter is ChoiceLetter.A
+        )
+        calls_used_in_current_batch = max(
+            0,
+            len(record.model_receipts) - budget.max_calls * (approved_batches - 1),
+        )
         budget.assert_call_allowed(
-            calls_used=len(record.model_receipts),
+            calls_used=calls_used_in_current_batch,
             requested_output_tokens=budget.max_output_tokens_per_call,
         )
         request = self._build_request(

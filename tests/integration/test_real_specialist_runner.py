@@ -101,6 +101,34 @@ async def test_live_runner_enforces_call_budget_before_gateway_call() -> None:
 
 
 @pytest.mark.asyncio
+async def test_fresh_live_approval_grants_another_bounded_call_batch() -> None:
+    confidence = {"level": "medium", "rationale": "Requires independent review."}
+    gateway = RecordingGateway(
+        {
+            "epistemic_items": [
+                {
+                    "id": "epi_second_batch_premise",
+                    "category": "premise",
+                    "statement": "A fresh approval starts another bounded batch.",
+                    "uncertainty": confidence,
+                    "origin": "Researcher",
+                }
+            ],
+            "unsupported_assumptions": [],
+        }
+    )
+    exhausted = approved_record(receipts=tuple(receipt() for _ in range(6)))
+    renewed = exhausted.model_copy(
+        update={"decisions": (*exhausted.decisions, exhausted.decisions[0])}
+    )
+
+    contribution = await runner(gateway).run(ModelRole.RESEARCHER, renewed)
+
+    assert contribution.epistemic_items[0].id == "epi_second_batch_premise"
+    assert len(gateway.requests) == 1
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_turns_exhausted_budget_into_an_ae_stop_prompt(
     tmp_path: Path,
 ) -> None:
