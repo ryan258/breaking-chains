@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from forge.domain.epistemics import (
+    ConfidenceLevel,
     DerivedClaim,
     EpistemicItem,
     Evidence,
@@ -15,7 +16,7 @@ from forge.domain.epistemics import (
     group_epistemic_items,
 )
 from forge.persistence.markdown import key_findings, render_record
-from forge.persistence.metadata import InvestigationRecord
+from forge.persistence.metadata import ChallengeDisposition, InvestigationRecord
 
 
 class ExportFormat(StrEnum):
@@ -23,6 +24,7 @@ class ExportFormat(StrEnum):
 
     MARKDOWN = "markdown"
     HTML = "html"
+    KIDS_HTML = "kids_html"
     TEXT = "text"
 
     @property
@@ -30,6 +32,7 @@ class ExportFormat(StrEnum):
         return {
             ExportFormat.MARKDOWN: "Markdown",
             ExportFormat.HTML: "HTML",
+            ExportFormat.KIDS_HTML: "HTML for kids",
             ExportFormat.TEXT: "Plain text",
         }[self]
 
@@ -346,6 +349,10 @@ def export_record(record: InvestigationRecord, export_format: ExportFormat) -> E
         text = _html_document(record, canonical_markdown)
         extension = "html"
         mime_type = "text/html"
+    elif export_format is ExportFormat.KIDS_HTML:
+        text = _kids_html_document(record, canonical_markdown)
+        extension = "kids.html"
+        mime_type = "text/html"
     else:
         text = _plain_text(canonical_markdown)
         extension = "txt"
@@ -588,6 +595,330 @@ def _open_questions_section(record: InvestigationRecord) -> str:
       <h2 id="questions-title">Questions that remain</h2></div></div>
       <ul>{questions}</ul>
     </section>"""
+
+
+_KIDS_CSS = """
+    :root {
+      --sky: #eef6ff;
+      --ink: #233457;
+      --pop: #b83a1c;
+      --sun: #ffd23f;
+      --leaf: #00795f;
+      --card: #ffffff;
+      --edge: #233457;
+    }
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--sky);
+      font: 17px/1.6 "Comic Neue", "Comic Sans MS", "Chalkboard SE", "Segoe Print", sans-serif;
+    }
+    .kid-shell { width: min(880px, calc(100% - 24px)); margin: 24px auto; }
+    .kid-cover {
+      background: var(--sun);
+      border: 3px solid var(--edge);
+      border-radius: 18px;
+      box-shadow: 8px 8px 0 var(--edge);
+      padding: 28px;
+      text-align: center;
+    }
+    .kid-brand {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .kid-cover h1 { margin: 14px 0 10px; font-size: clamp(26px, 5vw, 40px); line-height: 1.15; }
+    .kid-focus { max-width: 620px; margin: 0 auto; }
+    .kid-facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin: 18px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .kid-facts li {
+      overflow-wrap: anywhere;
+      background: var(--card);
+      border: 2px solid var(--edge);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 13px;
+    }
+    .kid-section {
+      margin-top: 26px;
+      background: var(--card);
+      border: 3px solid var(--edge);
+      border-radius: 18px;
+      box-shadow: 8px 8px 0 var(--edge);
+      padding: 24px 26px;
+      break-inside: avoid;
+    }
+    .kid-section h2 { margin: 0 0 8px; color: var(--pop); font-size: 26px; }
+    .finding-list { margin: 10px 0 0; padding: 0; list-style: none; }
+    .finding-list li {
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      gap: 10px;
+      border-top: 2px dashed var(--edge);
+      padding: 10px 0;
+    }
+    .finding-list li:first-child { border-top: 0; }
+    .finding-index { color: var(--leaf); font-weight: 700; }
+    .finding-list p { margin: 0; }
+    .kid-experiment h3 { margin: 4px 0 14px; font-size: 21px; }
+    .kid-experiment-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .kid-experiment-grid div {
+      background: var(--sky);
+      border: 2px solid var(--edge);
+      border-radius: 12px;
+      padding: 12px;
+      break-inside: avoid;
+    }
+    .kid-experiment-grid span {
+      display: block;
+      color: var(--pop);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .kid-experiment-grid p { margin: 6px 0 0; }
+    .kid-board { display: grid; gap: 18px; }
+    .kid-group h3 { margin: 10px 0 2px; color: var(--leaf); font-size: 20px; }
+    .kid-group-note { margin: 0 0 10px; font-size: 14px; }
+    .kid-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .kid-card {
+      border: 2px solid var(--edge);
+      border-radius: 12px;
+      padding: 14px;
+      break-inside: avoid;
+    }
+    .kid-card h4 { margin: 8px 0 6px; font-size: 16px; }
+    .kid-card p { margin: 4px 0 0; font-size: 14px; }
+    .kid-badge {
+      display: inline-block;
+      border: 2px solid var(--edge);
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .kid-badge-high { background: #c8f2d0; }
+    .kid-badge-medium { background: var(--sun); }
+    .kid-badge-low { background: #ffd9cf; }
+    .kid-challenge {
+      margin-top: 12px;
+      border: 2px solid var(--edge);
+      border-radius: 12px;
+      padding: 14px;
+      break-inside: avoid;
+    }
+    .kid-challenge span {
+      color: var(--pop);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .kid-challenge h3 { margin: 6px 0; font-size: 17px; }
+    .kid-challenge p { margin: 0; font-size: 14px; }
+    .kid-questions { margin: 8px 0 0; padding-left: 22px; }
+    .kid-questions li { padding: 4px 0; }
+    .kid-empty { font-style: italic; }
+    .kid-grownups pre {
+      max-height: 480px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: var(--sky);
+      border: 2px solid var(--edge);
+      border-radius: 12px;
+      padding: 14px;
+      font: 11px/1.5 ui-monospace, Menlo, monospace;
+    }
+    footer { margin: 22px 0; text-align: center; font-size: 14px; }
+    @page { size: A4; margin: 14mm; }
+    @media print {
+      body { background: #fff; }
+      .kid-shell { width: 100%; margin: 0; }
+      .kid-section, .kid-cover { box-shadow: none; }
+      .kid-grownups { break-before: page; }
+      .kid-grownups pre { max-height: none; }
+    }
+    @media (max-width: 640px) {
+      .kid-cards, .kid-experiment-grid { grid-template-columns: 1fr; }
+    }
+"""
+
+_KID_CONFIDENCE = {
+    ConfidenceLevel.HIGH: "Pretty sure",
+    ConfidenceLevel.MEDIUM: "Maybe",
+    ConfidenceLevel.LOW: "Just guessing",
+}
+
+_KID_DISPOSITION = {
+    ChallengeDisposition.RETAIN: "Survived!",
+    ChallengeDisposition.REVISE: "Changed a bit",
+    ChallengeDisposition.REJECT: "Tossed out",
+}
+
+
+def _kid_section(title: str, body: str, class_name: str = "") -> str:
+    return f"""<section class="kid-section {class_name}">
+      <h2>{_escape(title)}</h2>
+      {body}
+    </section>"""
+
+
+def _kid_card(item: EpistemicItem) -> str:
+    level = item.uncertainty.level
+    extra = ""
+    if isinstance(item, Evidence):
+        extra = f"<strong>Where it came from:</strong> {_escape(item.provenance.origin)}"
+    elif isinstance(item, Premise):
+        extra = f"<strong>Where it came from:</strong> {_escape(item.origin)}"
+    elif isinstance(item, DerivedClaim):
+        extra = f"<strong>Built from:</strong> {_escape(', '.join(item.dependencies))}"
+    elif isinstance(item, ExploratoryItem) and item.based_on:
+        extra = f"<strong>Sparked by:</strong> {_escape(', '.join(item.based_on))}"
+    if extra:
+        extra = f'<p class="kid-source">{extra}</p>'
+    return f"""<article class="kid-card">
+      <span class="kid-badge kid-badge-{_escape(level.value)}">{_KID_CONFIDENCE[level]}</span>
+      <h4>{_escape(item.statement)}</h4>
+      <p class="kid-why"><strong>Why we think so:</strong> {_escape(item.uncertainty.rationale)}</p>
+      {extra}
+    </article>"""
+
+
+def _kid_group(title: str, description: str, items: Sequence[EpistemicItem]) -> str:
+    cards = "".join(_kid_card(item) for item in items) or (
+        '<p class="kid-empty">Nothing pinned here yet.</p>'
+    )
+    return f"""<section class="kid-group">
+      <h3>{_escape(title)}</h3>
+      <p class="kid-group-note">{_escape(description)}</p>
+      <div class="kid-cards">{cards}</div>
+    </section>"""
+
+
+def _kid_action_section(record: InvestigationRecord) -> str:
+    action = record.selected_action
+    if action is None:
+        body = (
+            '<p class="kid-empty">No experiment picked yet — '
+            "the Test Inventor is still thinking.</p>"
+        )
+    else:
+        body = f"""<div class="kid-experiment">
+          <h3>{_escape(action.statement)}</h3>
+          <div class="kid-experiment-grid">
+            <div><span>What you should see</span><p>{_escape(action.expected_observation)}</p></div>
+            <div><span>What would prove it wrong</span>
+            <p>{_escape(action.disconfirming_observation)}</p></div>
+            <div><span>What it takes</span><p>{_escape(action.cost)}</p></div>
+            <div><span>Watch out</span><p>{_escape(action.risk)}</p></div>
+            <div><span>When to stop</span><p>{_escape(action.stopping_condition)}</p></div>
+            <div><span>Golden rule</span><p>Do experiments with a grown-up nearby.</p></div>
+          </div>
+        </div>"""
+    return _kid_section("Try this experiment", body)
+
+
+def _kid_challenge_section(record: InvestigationRecord) -> str:
+    cards = (
+        "".join(
+            f"""<article class="kid-challenge">
+          <span>{_KID_DISPOSITION[challenge.disposition]}</span>
+          <h3>{_escape(challenge.challenge)}</h3>
+          <p>{_escape(challenge.rationale)}</p>
+        </article>"""
+            for challenge in record.skeptical_challenges
+        )
+        or '<p class="kid-empty">The "Prove It!" Robot has not challenged anything yet.</p>'
+    )
+    intro = '<p>Every big idea has to survive the "Prove It!" Robot before we trust it.</p>'
+    return _kid_section("The Prove It! test", intro + cards)
+
+
+def _kids_html_document(record: InvestigationRecord, canonical_markdown: str) -> str:
+    title = html.escape(f"Mystery Mission: {record.seed}", quote=True)
+    seed = _escape(record.seed)
+    focus = _escape(record.selected_focus or "The Chief has not picked a focus yet.")
+    findings = key_findings(record) or (
+        "We have not reached the figuring-out part yet. Keep investigating!",
+    )
+    groups = group_epistemic_items(record.epistemic_items)
+    canonical = html.escape(canonical_markdown, quote=False)
+    clue_board = "".join(
+        (
+            _kid_group(
+                "What we assumed",
+                "The Chief wrote down our starting beliefs so we can check them.",
+                groups.premises,
+            ),
+            _kid_group(
+                "Clues we collected",
+                "The Clue Collector found these — and where every one came from.",
+                groups.evidence,
+            ),
+            _kid_group(
+                "Patterns we spotted",
+                "The Pattern Spotter connected the clues into findings.",
+                groups.claims,
+            ),
+            _kid_group(
+                "Big ideas and guesses",
+                "The Idea Builder made these up on purpose — they are guesses, not facts!",
+                groups.exploratory,
+            ),
+        )
+    )
+    questions = "".join(f"<li>{_escape(question)}</li>" for question in record.unresolved_questions)
+    if not questions:
+        questions = '<li class="kid-empty">No leftover mysteries. Case closed!</li>'
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+{_KIDS_CSS}
+  </style>
+</head>
+<body>
+  <main class="kid-shell">
+    <header class="kid-cover">
+      <div class="kid-brand">Mystery Mission Forge</div>
+      <h1>{seed}</h1>
+      <p class="kid-focus">{focus}</p>
+      <ul class="kid-facts" aria-label="Case facts">
+        <li>Case {_escape(record.id)}</li>
+        <li>{_escape(_label(record.workflow.stage.value))}</li>
+        <li>{record.workflow.updated_at:%B %d, %Y}</li>
+        <li>{len(record.epistemic_items)} clues and ideas</li>
+      </ul>
+    </header>
+    {_kid_section("What we figured out", _finding_list(findings))}
+    {_kid_action_section(record)}
+    {_kid_section("The clue board", f'<div class="kid-board">{clue_board}</div>')}
+    {_kid_challenge_section(record)}
+    {_kid_section("Still a mystery", f'<ul class="kid-questions">{questions}</ul>')}
+    <section class="kid-section kid-grownups">
+      <h2>For grown-ups: the whole case file</h2>
+      <p>This is the complete saved record, exactly as the Forge keeps it. It can be
+      pasted back into the Forge to reopen the case.</p>
+      <pre>{canonical}</pre>
+    </section>
+    <footer>Solved with the Mystery Mission Forge — one letter at a time.</footer>
+  </main>
+</body>
+</html>
+"""
 
 
 def _plain_text(canonical_markdown: str) -> str:

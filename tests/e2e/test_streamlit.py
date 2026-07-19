@@ -164,9 +164,14 @@ def test_streamlit_completes_deterministic_investigation_with_ae_controls(
     assert at.expander[-1].label == "View saved Markdown record"
     assert f"### {markdown_heading_text(seed)}" in [markdown.value for markdown in at.markdown]
     assert at.code[-1].value.startswith("# Investigation: Why does the **kettle** whistle for $5?")
-    assert at.selectbox(key="export_format").options == ["Markdown", "HTML", "Plain text"]
-    at.selectbox(key="export_format").select("HTML").run()
-    assert at.selectbox(key="export_format").value == "HTML"
+    assert at.selectbox(key="export_format").options == [
+        "Markdown",
+        "HTML",
+        "HTML for kids",
+        "Plain text",
+    ]
+    at.selectbox(key="export_format").select("HTML for kids").run()
+    assert at.selectbox(key="export_format").value == "HTML for kids"
     assert not at.exception
 
 
